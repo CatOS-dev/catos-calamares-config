@@ -240,25 +240,8 @@
           - wf-recorder
           - hyprlock
           - hyprpicker
-          - quickshell-git
+          - quickshell
           - catos-hyprland-dms
-          - tela-circle-icon-theme-all
-      - name: "Hyprland-noctalia"
-        description: "Hyprland is a dynamic tiling Wayland compositor based on wlroots. It is written in C and designed to be fast, flexible, and customizable. Hyprland"
-        hidden: false
-        selected: false
-        critical: true
-        packages:
-          - ly
-          - hyprland
-          - qt6ct
-          - nwg-look
-          - thunar
-          - ghostty
-          - wf-recorder
-          - hyprlock
-          - hyprpicker
-          - catos-hyprland-noctalia
           - tela-circle-icon-theme-all
       - name: "Xfce4"
         description: "Xfce is a lightweight desktop environment for UNIX-like operating systems. It aims to be fast and low on system resources, while still being visually appealing and user friendly."
