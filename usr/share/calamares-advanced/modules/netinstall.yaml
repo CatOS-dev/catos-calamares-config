@@ -221,25 +221,9 @@
           - xwayland-satellite
           - ghostty
           - wf-recorder
-          - quickshell-git
-          # - catos-niri-dms
-          - shorin-niri-dms
-          - tela-circle-icon-theme-all
-      - name: "Niri-noctalia"
-        description: "Niri is a dynamic tiling window manager for X11 and Wayland, written in Rust. It features a unique dynamic tiling layout, extensive customization options, and support for both X11 and Wayland display servers."
-        hidden: false
-        selected: false
-        critical: true
-        packages:
-          - ly
-          - niri
-          - qt6ct
-          - nwg-look
-          - thunar
-          - xwayland-satellite
-          - ghostty
-          - wf-recorder
-          - catos-niri-noctalia
+          - quickshell
+          - dms-shell
+          - catos-niri-dms
           - tela-circle-icon-theme-all
       - name: "Hyprland-dms"
         description: "Hyprland is a dynamic tiling Wayland compositor based on wlroots. It is written in C and designed to be fast, flexible, and customizable. Hyprland"
