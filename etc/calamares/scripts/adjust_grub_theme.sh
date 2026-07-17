@@ -1,19 +1,20 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# 获取当前分辨率
-resolution=$(xrandr | grep '*' | head -n1 | awk '{print $1}')
-width=$(echo "$resolution" | cut -d'x' -f1)
-height=$(echo "$resolution" | cut -d'x' -f2)
+resolution=$(xrandr --current 2>/dev/null | awk '/\*/ { print $1; exit }')
+if [[ ! $resolution =~ ^([0-9]+)x([0-9]+)$ ]]; then
+    echo "无法检测显示分辨率，保留默认的 1080p GRUB 主题"
+    exit 0
+fi
 
-# 判断分辨率类型
-if [[ $width -ge 3840 && $height -ge 2160 ]]; then
-    echo "当前分辨率：${width}x${height}，属于 4K"
+width=${BASH_REMATCH[1]}
+height=${BASH_REMATCH[2]}
+
+if (( width >= 3840 && height >= 2160 )); then
+    echo "当前分辨率：${width}x${height}，使用 4K GRUB 主题"
     sed -i "s/resolution='1080p'/resolution='4k'/g" /etc/calamares/scripts/adjust_grub_theme_after.sh
-elif [[ $width -ge 2560 && $height -ge 1440 ]]; then
-    echo "当前分辨率：${width}x${height}，属于 2K"
+elif (( width >= 2560 && height >= 1440 )); then
+    echo "当前分辨率：${width}x${height}，使用 2K GRUB 主题"
     sed -i "s/resolution='1080p'/resolution='2k'/g" /etc/calamares/scripts/adjust_grub_theme_after.sh
-elif [[ $width -ge 1920 && $height -ge 1080 ]]; then
-    echo "当前分辨率：${width}x${height}，属于 1080p"
 else
-    echo "当前分辨率：${width}x${height}，不属于常见标准"
+    echo "当前分辨率：${width}x${height}，使用默认的 1080p GRUB 主题"
 fi

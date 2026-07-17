@@ -3,8 +3,8 @@ pkgver=26.05
 pkgrel=1
 pkgdesc="calamares for CatOS"
 arch=('any')
-url="https://github.com/arch-linux-calamares-installer"
-license=('GPL3')
+url="https://github.com/Aromatic05/catos-calamares-config"
+license=('GPL-3.0-or-later')
 makedepends=('git')
 provides=("$pkgname")
 conflicts=('alci-calamares-config'
@@ -14,10 +14,6 @@ conflicts=('alci-calamares-config'
 
 source=("$pkgname::git+file://$PWD")
 sha256sums=('SKIP')
-
-build() {
-    cd "$srcdir/$pkgname"
-}
 
 package() {
     cd "$srcdir/$pkgname"
