@@ -662,7 +662,7 @@
             - catos-graphite-gtk-theme
     - name: UKUI
       description: UKUI desktop
-      hidden: false
+      hidden: true
       selected: false
       expanded: false
       subgroups:

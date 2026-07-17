@@ -139,11 +139,17 @@ class ProfileTests(unittest.TestCase):
 
         chooser_ids = [item["id"] for item in chooser["items"] if item["id"]]
         desktop_group = next(group for group in netinstall if group["name"] == "Desktop Environments")
-        desktop_names = [desktop["name"] for desktop in desktop_group["subgroups"]]
+        visible_desktop_names = [
+            desktop["name"] for desktop in desktop_group["subgroups"] if not desktop.get("hidden", False)
+        ]
+        ukui = next(desktop for desktop in desktop_group["subgroups"] if desktop["name"] == "UKUI")
 
-        self.assertEqual(chooser_ids, desktop_names)
+        self.assertEqual(chooser_ids, visible_desktop_names)
         self.assertNotIn("Niri-dms", chooser_ids)
         self.assertNotIn("Hyprland-dms", chooser_ids)
+        self.assertNotIn("UKUI", chooser_ids)
+        self.assertTrue(ukui["hidden"])
+        self.assertFalse(ukui["selected"])
         self.assertFalse(desktop_group["hidden"])
         self.assertFalse(desktop_group["selected"])
 
