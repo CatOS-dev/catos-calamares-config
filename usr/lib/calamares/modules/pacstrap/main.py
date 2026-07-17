@@ -175,25 +175,9 @@ def run():
     bootloader = libcalamares.globalstorage.value("packagechooser_bootloader")
 
     if not bootloader:
-        libcalamares.utils.warning("Failed to determine bootloader type; continuing without bootloader-specific packages")
+        return "Bootloader selection missing", "Failed to determine the selected bootloader"
     else:
         libcalamares.utils.debug(f"Current bootloader: {bootloader}")
-        try:
-            curr_filesystem = (
-                subprocess.run(
-                    ["findmnt", "-ln", "-o", "FSTYPE", root_mount_point],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                )
-                .stdout.decode("utf-8")
-                .strip()
-            )
-        except Exception:
-            curr_filesystem = ""
-
-        is_root_on_zfs = (curr_filesystem == "zfs")
-        is_root_on_btrfs = (curr_filesystem == "btrfs")
-
         if bootloader == "grub":
             base_packages += ["grub", "catos-grub-theme-dark", "os-prober"]
         elif bootloader == "limine":
@@ -202,12 +186,10 @@ def run():
             base_packages += ["refind"]
         elif bootloader == "systemd-boot":
             base_packages += ["catos-systemd-boot-config"]
+        else:
+            return "Unsupported bootloader", f"Unsupported bootloader selection: {bootloader}"
 
-        if is_root_on_zfs:
-            base_packages += ["zfs-utils", "zfs-dkms", "libunwind", "linux-lts", "linux-lts-headers"]
-        
-        if not is_root_on_zfs:
-            base_packages += ["linux", "linux-headers"]
+        base_packages += ["linux", "linux-headers"]
 
 
     # --- NEW: optional sync + pkgcheck filtering (host-side) ---

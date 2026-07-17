@@ -66,7 +66,7 @@
   critical: true
   subgroups:
       - name: "LTS Kernel"
-        description: "LTS Kernel, ZFS 用户需要选择, 且不应该选择其他内核"
+        description: "长期支持内核；可作为默认 linux 内核之外的备用内核"
         selected: false
         packages:
           - linux-lts
