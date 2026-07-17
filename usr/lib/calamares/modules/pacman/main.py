@@ -79,39 +79,42 @@ def pretty_status_message():
     }
 
 
+def _normalize_locale(locale):
+    locale = str(locale or "en").split(".", 1)[0].split("@", 1)[0]
+    return locale.replace("_", "-").lower()
+
+
 # --- Helpers ---
 def subst_locale(plist):
     """
     Locale-aware list of packages.
     Substitutes ${LOCALE} with the selected BCP47 locale; drops LOCALE-packages if locale is 'en'.
     """
-    locale = libcalamares.globalstorage.value("locale") or "en"
+    locale = _normalize_locale(libcalamares.globalstorage.value("locale"))
 
-    ret = []
+    result = []
     for packagedata in plist:
         if isinstance(packagedata, str):
             packagename = packagedata
+            output = packagedata
         else:
             packagename = packagedata.get("package")
+            output = dict(packagedata)
 
         if packagename is None:
             continue
 
-        if locale != "en":
-            packagename = Template(packagename).safe_substitute(LOCALE=locale)
-        elif "LOCALE" in packagename:
-            packagename = None
-
-        if packagename is None:
+        if locale == "en" and "LOCALE" in packagename:
             continue
 
-        if isinstance(packagedata, str):
-            ret.append(packagename)
+        packagename = Template(packagename).safe_substitute(LOCALE=locale)
+        if isinstance(output, str):
+            result.append(packagename)
         else:
-            packagedata["package"] = packagename
-            ret.append(packagedata)
+            output["package"] = packagename
+            result.append(output)
 
-    return ret
+    return result
 
 
 def _run_script(script):
@@ -253,8 +256,12 @@ class PacmanManager:
 def run_operations(pkgman: PacmanManager, entry: dict):
     global group_packages, completed_packages
 
-    for key in entry.keys():
-        package_list = subst_locale(entry[key])
+    for key, value in entry.items():
+        if key == "source":
+            libcalamares.utils.debug("Package-list from {!s}".format(value))
+            continue
+
+        package_list = subst_locale(value)
         group_packages = len(package_list)
 
         if key == "install":
@@ -272,8 +279,6 @@ def run_operations(pkgman: PacmanManager, entry: dict):
         elif key == "localInstall":
             _change_mode(INSTALL)
             pkgman.operation_install(package_list, from_local=True)
-        elif key == "source":
-            libcalamares.utils.debug("Package-list from {!s}".format(entry[key]))
         else:
             libcalamares.utils.warning("Unknown package-operation key {!s}".format(key))
 

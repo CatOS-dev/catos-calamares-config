@@ -66,6 +66,10 @@ def preprocess_operations(operations, subst_locale_fn, repo_pkgs, repo_groups):
     for op in operations:
         new_op = {}
         for key, raw_list in op.items():
+            if key == "source":
+                new_op[key] = raw_list
+                continue
+
             localized = subst_locale_fn(raw_list)
 
             if key in filter_keys:
@@ -76,7 +80,6 @@ def preprocess_operations(operations, subst_locale_fn, repo_pkgs, repo_groups):
                 new_op[key] = localized
                 total += len(localized)
             else:
-                # keep (e.g. "source"); do not count to total by default
                 new_op[key] = localized
 
         # drop completely-empty ops (optional)

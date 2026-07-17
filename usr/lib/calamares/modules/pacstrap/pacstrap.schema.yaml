@@ -1,8 +1,10 @@
 ---
 $schema: https://json-schema.org/schema#
-$id: https://calamares.io/schemas/umount
+$id: https://calamares.io/schemas/catos-pacstrap
 additionalProperties: false
 type: object
 properties:
     basePackages: { type: array }
     postInstallFiles: { type: array }
+    sync_db: { type: boolean, default: true }
+required: [ basePackages ]
