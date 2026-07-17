@@ -133,6 +133,61 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("calamares-paru", final)
         self.assertIn("chage -E 0 nobody", final)
 
+    def test_desktop_profiles_are_functionally_grouped(self):
+        chooser = load_yaml("usr/share/calamares-advanced/modules/packagechooser_desktop.conf")
+        netinstall = load_yaml("usr/share/calamares-advanced/modules/netinstall.yaml")
+
+        chooser_ids = [item["id"] for item in chooser["items"] if item["id"]]
+        desktop_group = next(group for group in netinstall if group["name"] == "Desktop Environments")
+        desktop_names = [desktop["name"] for desktop in desktop_group["subgroups"]]
+
+        self.assertEqual(chooser_ids, desktop_names)
+        self.assertNotIn("Niri-dms", chooser_ids)
+        self.assertNotIn("Hyprland-dms", chooser_ids)
+        self.assertFalse(desktop_group["hidden"])
+        self.assertFalse(desktop_group["selected"])
+
+        for desktop in desktop_group["subgroups"]:
+            self.assertNotIn("packages", desktop)
+            self.assertGreaterEqual(len(desktop["subgroups"]), 3)
+            critical_groups = [group for group in desktop["subgroups"] if group["critical"]]
+            self.assertEqual(len(critical_groups), 1, desktop["name"])
+            self.assertTrue(all(group["selected"] for group in desktop["subgroups"]))
+            self.assertTrue(all(group.get("packages") for group in desktop["subgroups"]))
+
+    def test_desktop_package_cleanup(self):
+        chooser = load_yaml("usr/share/calamares-advanced/modules/packagechooser_desktop.conf")
+        netinstall = load_yaml("usr/share/calamares-advanced/modules/netinstall.yaml")
+
+        for item in chooser["items"]:
+            self.assertLessEqual(len(item["description"]), 80)
+            self.assertIn("description[zh_CN]", item)
+
+        all_packages = []
+        for top_group in netinstall:
+            if top_group["name"] == "Base-devel + Common packages":
+                package_tools = next(
+                    subgroup for subgroup in top_group["subgroups"] if subgroup["name"] == "packages management"
+                )
+                self.assertNotIn("octopi", package_tools["packages"])
+            if top_group["name"] == "Desktop Environments":
+                for desktop in top_group["subgroups"]:
+                    for subgroup in desktop["subgroups"]:
+                        all_packages.extend(subgroup["packages"])
+
+        removed_packages = {
+            "plasma-meta",
+            "gnome",
+            "gnome-appfolders-manager",
+            "sassc",
+            "metacity",
+            "lightdm-gtk-greeter-settings",
+            "xfce4-datetime-plugin",
+            "baka-mplayer",
+            "qt5-translations",
+        }
+        self.assertTrue(removed_packages.isdisjoint(all_packages))
+
     def test_process_group_timeout_kills_children(self):
         module_path = ROOT / "usr/lib/calamares/modules/paru/process.py"
         spec = importlib.util.spec_from_file_location("calamares_paru_process", module_path)
