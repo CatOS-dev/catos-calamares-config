@@ -39,7 +39,6 @@
         packages:
           - pacman-contrib
           - pkgfile
-          - octopi
           - yay
           - paru
           - rebuild-detector
@@ -145,324 +144,565 @@
           - openssh
           - flatpak
           - eza
-- name: "Desktop Environments"
-  description: "选择桌面环境: 最好只选择一个(虽然安装多个不会报错)"
+- name: Desktop Environments
+  description: 可选择一个或多个桌面环境，并分别调整核心组件、集成、应用和 CatOS 定制。
   hidden: false
   selected: false
   expanded: true
   subgroups:
-      - name: "KDE-Desktop"
-        description: "KDE-Plasma Desktop - Simple by default, powerful when needed."
-        hidden: false
-        selected: false
-        expanded: false
-        critical: true
-        packages:
-          - plasma-login-manager
-          - plasma-meta
-          - konsole
-          - dolphin
-          - plasma-workspace
-          - xdg-desktop-portal
-          - ark
-          - vlc
-          - kate
-          - kcalc
-          - spectacle
-          - okular
-          - kio-admin
-          - kwalletmanager
-          - bluedevil
-          - powerdevil
-          - yakuake
-          - ffmpegthumbs
-          - filelight
-          - tela-icon-theme-git
-          - catos-kde-settings
-          - catos-kde-theme
-          - kwin-decoration-sierra-breeze-enhanced-for-catos
-      - name: "GNOME-Desktop"
-        description: "GNOME Desktop - designed to put you in control and get things done."
-        hidden: false
-        selected: false
-        expanded: false
-        critical: true
-        packages:
-          - gdm
-          - gnome
-          - gnome-shell-extensions
-          - gnome-tweaks
-          - gnome-shell-extension-vitals
-          - gnome-shell-extension-caffeine
-          - gnome-shell-extension-appindicator
-          - gnome-shell-extension-desktop-icons-ng
-          - gnome-shell-extension-dash-to-dock
-          - gnome-appfolders-manager
-          - gnome-themes-extra
-          - tela-circle-icon-theme-all
-          - sassc
-          - catos-gnome-settings
-          - catos-gtk-settings
-          - catos-graphite-gtk-theme
-          - gnome-shell-extension-kimpanel-git
-      - name: "Niri-dms"
-        description: "Niri is a dynamic tiling window manager for X11 and Wayland, written in Rust. It features a unique dynamic tiling layout, extensive customization options, and support for both X11 and Wayland display servers."
-        hidden: false
-        selected: false
-        critical: true
-        packages:
-          - ly
-          - niri
-          - thunar
-          - qt6ct
-          - nwg-look
-          - xwayland-satellite
-          - ghostty
-          - wf-recorder
-          - quickshell
-          - dms-shell
-          - catos-niri-dms
-          - tela-circle-icon-theme-all
-      - name: "Hyprland-dms"
-        description: "Hyprland is a dynamic tiling Wayland compositor based on wlroots. It is written in C and designed to be fast, flexible, and customizable. Hyprland"
-        hidden: false
-        selected: false
-        critical: true
-        packages:
-          - ly
-          - hyprland
-          - qt6ct
-          - nwg-look
-          - thunar
-          - ghostty
-          - wf-recorder
-          - hyprlock
-          - hyprpicker
-          - quickshell
-          - catos-hyprland-dms
-          - tela-circle-icon-theme-all
-      - name: "Xfce4"
-        description: "Xfce is a lightweight desktop environment for UNIX-like operating systems. It aims to be fast and low on system resources, while still being visually appealing and user friendly."
-        hidden: false
-        selected: false
-        critical: true
-        packages:
-          - blueman
-          - file-roller
-          - galculator
-          - gvfs
-          - gvfs-afc
-          - gvfs-gphoto2
-          - gvfs-mtp
-          - gvfs-nfs
-          - gvfs-smb
-          - lightdm
-          - lightdm-slick-greeter
-          - lightdm-gtk-greeter-settings
-          - network-manager-applet
-          - parole
-          - ristretto
-          - thunar-archive-plugin
-          - thunar-media-tags-plugin
-          - xdg-user-dirs-gtk
-          - xed
-          - xfce4
-          - xfce4-battery-plugin
-          - xfce4-clipman-plugin
-          - xfce4-datetime-plugin
-          - xfce4-mount-plugin
-          - xfce4-netload-plugin
-          - xfce4-notifyd
-          - xfce4-pulseaudio-plugin
-          - xfce4-screensaver
-          - xfce4-screenshooter
-          - xfce4-taskmanager
-          - xfce4-wavelan-plugin
-          - xfce4-weather-plugin
-          - xfce4-whiskermenu-plugin
-          - xfce4-xkb-plugin
-          - catos-gtk-settings
-          - catos-graphite-gtk-theme
-          - tela-circle-icon-theme-all
-          - catos-xfce-settings
-          - catos-lightdm-slick-theme
-      - name: "Cinnamon"
-        description: "Linux desktop which provides advanced innovative features and a traditional user experience."
-        hidden: false
-        selected: false
-        critical: false
-        packages:
-          - cinnamon
-          - system-config-printer
-          - gnome-keyring
-          - gnome-terminal
-          - metacity
-          - lightdm
-          - lightdm-gtk-greeter
-          - cinnamon-translations
-          - tela-circle-icon-theme-all
-          - catos-cinnamon-settings
-          - catos-gtk-settings
-          - catos-graphite-gtk-theme
-      - name: "Cosmic"
-        description: "Linux desktop, which provides an environment that features advanced functionality and a responsive design."
-        hidden: false
-        selected: false
-        critical: true
-        packages:
-          - cosmic
-          - notification-daemon
-          - cosmic-greeter
-          - xdg-desktop-portal-cosmic
-          - xorg-xwayland
-      - name: "Budgie-Desktop"
-        description: "Budgie - an independent, familiar, and modern desktop."
-        hidden: false
-        selected: false
-        critical: false
-        packages:
-          - budgie-control-center
-          - budgie-desktop
-          - budgie-desktop-view
-          - budgie-extras
-          - eog
-          - evince
-          - file-roller
-          - gedit
-          - gnome-keyring
-          - gnome-screenshot
-          - gnome-terminal
-          - gvfs
-          - gvfs-afc
-          - gvfs-gphoto2
-          - gvfs-mtp
-          - gvfs-nfs
-          - gvfs-smb
-          - lightdm
-          - lightdm-slick-greeter
-          - nemo
-          - nemo-fileroller
-          - network-manager-applet
-          - sushi
-          - totem
-          - xdg-user-dirs-gtk
-          - tela-circle-icon-theme-all
-          - catos-budgie-settings
-          - catos-lightdm-slick-theme
-          - catos-gtk-settings
-          - catos-graphite-gtk-theme
-      - name: "LXDE-Desktop"
-        description: "The Lightweight Desktop Environment."
-        hidden: false
-        selected: false
-        critical: false
-        packages:
-          - celluloid
-          - file-roller
-          - galculator
-          - gnome-screenshot
-          - gpicview
-          - gvfs
-          - gvfs-afc
-          - gvfs-gphoto2
-          - gvfs-mtp
-          - gvfs-nfs
-          - gvfs-smb
-          - lxappearance
-          - obconf-qt
-          - lxde
-          - lxde-icon-theme
-          - lxterminal
-          - lightdm
-          - lightdm-slick-greeter
-          - notification-daemon
-          - openbox
-          - pcmanfm
-          - lxmusic
-          - network-manager-applet
-          - xdg-user-dirs-gtk
-          - xed
-          - catos-gtk-settings
-          - catos-graphite-gtk-theme
-          - tela-circle-icon-theme-all
-      - name: "LXQT-Desktop"
-        description: "The Lightweight Qt Desktop Environment."
-        hidden: false
-        selected: false
-        critical: false
-        packages:
-          - audiocd-kio
-          - baka-mplayer
-          - breeze
-          - breeze-gtk
-          - featherpad
-          - gvfs
-          - gvfs-mtp
-          - kio-fuse
-          - libstatgrab
-          - libsysstat
-          - lm_sensors
-          - lxqt
-          - lxqt-archiver
-          - network-manager-applet
-          - oxygen-icons
-          - pavucontrol-qt
-          - print-manager
-          - qt5-translations
-          - sddm
-          - catos-sddm-theme
-          - xdg-utils
-          - xscreensaver
-          - catos-gtk-settings
-          - catos-graphite-gtk-theme
-          - xsettingsd
-          - tela-circle-icon-theme-all
-      - name: "MATE-Desktop"
-        description: "MATE Desktop - the continuation of GNOME 2"
-        hidden: false
-        selected: false
-        critical: false
-        packages:
-          - celluloid
-          - gvfs
-          - gvfs-afc
-          - gvfs-gphoto2
-          - gvfs-mtp
-          - gvfs-nfs
-          - gvfs-smb
-          - lightdm
-          - lightdm-slick-greeter
-          - catos-lightdm-slick-theme
-          - mate
-          - mate-extra
-          - network-manager-applet
-          - xdg-user-dirs-gtk
-          - tela-circle-icon-theme-all
-          - catos-mate-settings
-          - catos-gtk-settings
-          - catos-graphite-gtk-theme
-      - name: "UKUI"
-        description: "It is a lightweight desktop environment, which consumes few resources and works with older computers. It has been developed with GTK and Qt technologies. Its visual appearance is similar to Windows 7, making it easier for new users of Linux."
-        hidden: false
-        selected: false
-        critical: false
-        packages:
-          - sddm
-          - ukui
-          - catos-sddm-theme
-          - thunar
-          - thunar-archive-plugin
-          - thunar-volman
-          - xfce4-terminal
-          - mate-terminal
-          - mate-system-monitor
-          - mate-control-center
-          - redshift
-          - gnome-screenshot
-          - accountsservice
-          - gvfs
-          - qt5-quickcontrols
-          - tela-circle-icon-theme-all
+    - name: KDE-Desktop
+      description: KDE Plasma desktop
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: Plasma core
+          description: Desktop session, login manager and core system integration
+          selected: true
+          critical: true
+          packages:
+            - plasma-desktop
+            - plasma-workspace
+            - plasma-login-manager
+            - plasma-nm
+            - plasma-pa
+            - kscreen
+            - powerdevil
+            - polkit-kde-agent
+            - xdg-desktop-portal-kde
+            - kwallet-pam
+            - breeze
+            - breeze-gtk
+            - kde-gtk-config
+            - kinfocenter
+        - name: Plasma integration
+          description: File, device and desktop integration
+          selected: true
+          critical: false
+          packages:
+            - bluedevil
+            - kdeconnect
+            - kio-extras
+            - kio-fuse
+            - kio-admin
+            - ffmpegthumbs
+            - kdegraphics-thumbnailers
+            - xsettingsd
+        - name: Plasma applications
+          description: Common KDE applications
+          selected: true
+          critical: false
+          packages:
+            - dolphin
+            - dolphin-plugins
+            - konsole
+            - ark
+            - kate
+            - okular
+            - spectacle
+            - gwenview
+            - filelight
+            - partitionmanager
+            - kcalc
+            - yakuake
+            - vlc
+        - name: CatOS Plasma customization
+          description: CatOS settings, themes and visual customization
+          selected: true
+          critical: false
+          packages:
+            - tela-icon-theme-git
+            - catos-kde-settings
+            - catos-kde-theme
+            - kwin-decoration-sierra-breeze-enhanced-for-catos
+    - name: GNOME-Desktop
+      description: GNOME desktop
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: GNOME core
+          description: Desktop session, login manager and core applications
+          selected: true
+          critical: true
+          packages:
+            - gdm
+            - gnome-shell
+            - gnome-control-center
+            - gnome-keyring
+            - nautilus
+            - xdg-desktop-portal-gnome
+            - xdg-user-dirs-gtk
+            - gvfs
+            - libnma
+        - name: GNOME file integration
+          description: Removable media, network shares and file previews
+          selected: true
+          critical: false
+          packages:
+            - gvfs-afc
+            - gvfs-gphoto2
+            - gvfs-mtp
+            - gvfs-nfs
+            - gvfs-smb
+            - sushi
+        - name: GNOME applications
+          description: Common GNOME applications
+          selected: true
+          critical: false
+          packages:
+            - gnome-text-editor
+            - ptyxis
+            - loupe
+            - papers
+            - file-roller
+            - gnome-calculator
+            - gnome-disk-utility
+            - gnome-system-monitor
+            - showtime
+        - name: GNOME extensions
+          description: Optional shell extensions and configuration tools
+          selected: true
+          critical: false
+          packages:
+            - gnome-tweaks
+            - gnome-shell-extension-vitals
+            - gnome-shell-extension-caffeine
+            - gnome-shell-extension-appindicator
+            - gnome-shell-extension-desktop-icons-ng
+            - gnome-shell-extension-dash-to-dock
+            - gnome-shell-extension-kimpanel-git
+        - name: CatOS GNOME customization
+          description: CatOS settings, themes and icons
+          selected: true
+          critical: false
+          packages:
+            - gnome-themes-extra
+            - tela-circle-icon-theme-all
+            - catos-gnome-settings
+            - catos-gtk-settings
+            - catos-graphite-gtk-theme
+    - name: Xfce4
+      description: Xfce desktop
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: Xfce core
+          description: Desktop session, login manager and essential integration
+          selected: true
+          critical: true
+          packages:
+            - xfce4
+            - lightdm
+            - lightdm-slick-greeter
+            - network-manager-applet
+            - xdg-user-dirs-gtk
+            - xfce4-notifyd
+            - xfce4-pulseaudio-plugin
+            - xfce4-screensaver
+        - name: Xfce file integration
+          description: Removable media, network shares and Thunar extensions
+          selected: true
+          critical: false
+          packages:
+            - blueman
+            - gvfs
+            - gvfs-afc
+            - gvfs-gphoto2
+            - gvfs-mtp
+            - gvfs-nfs
+            - gvfs-smb
+            - thunar-archive-plugin
+            - thunar-media-tags-plugin
+        - name: Xfce panel plugins
+          description: Useful panel plugins
+          selected: true
+          critical: false
+          packages:
+            - xfce4-battery-plugin
+            - xfce4-clipman-plugin
+            - xfce4-mount-plugin
+            - xfce4-netload-plugin
+            - xfce4-wavelan-plugin
+            - xfce4-weather-plugin
+            - xfce4-whiskermenu-plugin
+            - xfce4-xkb-plugin
+        - name: Xfce applications
+          description: Common lightweight applications
+          selected: true
+          critical: false
+          packages:
+            - file-roller
+            - galculator
+            - parole
+            - ristretto
+            - mousepad
+            - xfce4-screenshooter
+            - xfce4-taskmanager
+        - name: CatOS Xfce customization
+          description: CatOS settings, themes and login appearance
+          selected: true
+          critical: false
+          packages:
+            - catos-gtk-settings
+            - catos-graphite-gtk-theme
+            - tela-circle-icon-theme-all
+            - catos-xfce-settings
+            - catos-lightdm-slick-theme
+    - name: Cinnamon
+      description: Cinnamon desktop
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: Cinnamon core
+          description: Desktop session, login manager and essential integration
+          selected: true
+          critical: true
+          packages:
+            - cinnamon
+            - lightdm
+            - lightdm-slick-greeter
+            - gnome-keyring
+            - xdg-user-dirs-gtk
+            - gvfs
+            - xdg-desktop-portal-xapp
+        - name: Cinnamon file integration
+          description: Network shares, removable media and Nemo extensions
+          selected: true
+          critical: false
+          packages:
+            - blueman
+            - gvfs-afc
+            - gvfs-gphoto2
+            - gvfs-mtp
+            - gvfs-nfs
+            - gvfs-smb
+            - nemo-fileroller
+            - nemo-image-converter
+            - nemo-share
+        - name: Cinnamon applications
+          description: Common desktop applications
+          selected: true
+          critical: false
+          packages:
+            - gnome-terminal
+            - file-roller
+            - galculator
+            - gnome-system-monitor
+            - gthumb
+            - mpv
+        - name: CatOS Cinnamon customization
+          description: CatOS settings, themes and login appearance
+          selected: true
+          critical: false
+          packages:
+            - tela-circle-icon-theme-all
+            - catos-cinnamon-settings
+            - catos-gtk-settings
+            - catos-graphite-gtk-theme
+            - catos-lightdm-slick-theme
+    - name: Cosmic
+      description: COSMIC desktop
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: COSMIC core
+          description: Desktop session, compositor, greeter and system integration
+          selected: true
+          critical: true
+          packages:
+            - cosmic-session
+            - cosmic-comp
+            - cosmic-panel
+            - cosmic-applets
+            - cosmic-launcher
+            - cosmic-workspaces
+            - cosmic-settings
+            - cosmic-settings-daemon
+            - cosmic-osd
+            - cosmic-notifications
+            - cosmic-greeter
+            - cosmic-bg
+            - cosmic-randr
+            - cosmic-idle
+            - xdg-desktop-portal-cosmic
+            - xdg-desktop-portal-gtk
+            - gnome-keyring
+            - xorg-xwayland
+        - name: COSMIC applications
+          description: Applications developed for COSMIC
+          selected: true
+          critical: false
+          packages:
+            - cosmic-app-library
+            - cosmic-files
+            - cosmic-terminal
+            - cosmic-text-editor
+            - cosmic-screenshot
+            - cosmic-player
+            - cosmic-monitor
+        - name: COSMIC appearance
+          description: COSMIC wallpapers and icon theme
+          selected: true
+          critical: false
+          packages:
+            - cosmic-wallpapers
+            - cosmic-icon-theme
+    - name: Budgie-Desktop
+      description: Budgie desktop
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: Budgie core
+          description: Desktop session, login manager and essential integration
+          selected: true
+          critical: true
+          packages:
+            - budgie-desktop
+            - budgie-desktop-view
+            - budgie-extras
+            - lightdm
+            - lightdm-slick-greeter
+            - gnome-keyring
+            - network-manager-applet
+            - xdg-user-dirs-gtk
+            - gvfs
+        - name: Budgie file integration
+          description: Network shares, removable media and Nemo integration
+          selected: true
+          critical: false
+          packages:
+            - blueman
+            - gvfs-afc
+            - gvfs-gphoto2
+            - gvfs-mtp
+            - gvfs-nfs
+            - gvfs-smb
+            - nemo
+            - nemo-fileroller
+            - sushi
+        - name: Budgie applications
+          description: Common GTK desktop applications
+          selected: true
+          critical: false
+          packages:
+            - gnome-text-editor
+            - gnome-terminal
+            - loupe
+            - papers
+            - file-roller
+            - celluloid
+            - gnome-screenshot
+        - name: CatOS Budgie customization
+          description: CatOS settings, themes and login appearance
+          selected: true
+          critical: false
+          packages:
+            - tela-circle-icon-theme-all
+            - catos-budgie-settings
+            - catos-lightdm-slick-theme
+            - catos-gtk-settings
+            - catos-graphite-gtk-theme
+    - name: LXDE-Desktop
+      description: LXDE desktop
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: LXDE core
+          description: Desktop session, window manager, panel and login manager
+          selected: true
+          critical: true
+          packages:
+            - lxde-common
+            - lxpanel
+            - lxsession
+            - lxrandr
+            - lxinput
+            - lxhotkey
+            - lxlauncher
+            - lxtask
+            - openbox
+            - pcmanfm
+            - lightdm
+            - lightdm-slick-greeter
+            - network-manager-applet
+            - notification-daemon
+            - xdg-user-dirs-gtk
+            - gvfs
+        - name: LXDE integration
+          description: Network shares, removable media and appearance tools
+          selected: true
+          critical: false
+          packages:
+            - gvfs-afc
+            - gvfs-gphoto2
+            - gvfs-mtp
+            - gvfs-nfs
+            - gvfs-smb
+            - lxappearance
+            - lxappearance-obconf
+            - lxde-icon-theme
+        - name: LXDE applications
+          description: Common lightweight applications
+          selected: true
+          critical: false
+          packages:
+            - lxterminal
+            - lxmusic
+            - gpicview
+            - file-roller
+            - galculator
+            - celluloid
+            - mousepad
+        - name: CatOS LXDE customization
+          description: CatOS themes and login appearance
+          selected: true
+          critical: false
+          packages:
+            - catos-gtk-settings
+            - catos-graphite-gtk-theme
+            - tela-circle-icon-theme-all
+            - catos-lightdm-slick-theme
+    - name: LXQT-Desktop
+      description: LXQt desktop
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: LXQt core
+          description: Desktop session, login manager and essential integration
+          selected: true
+          critical: true
+          packages:
+            - lxqt
+            - sddm
+            - network-manager-applet
+            - gvfs
+            - xdg-utils
+            - xdg-desktop-portal-lxqt
+            - breeze
+            - breeze-gtk
+            - oxygen-icons
+            - xsettingsd
+        - name: LXQt integration
+          description: File integration and hardware monitoring
+          selected: true
+          critical: false
+          packages:
+            - gvfs-mtp
+            - kio-fuse
+            - lm_sensors
+        - name: LXQt applications
+          description: Common Qt desktop applications
+          selected: true
+          critical: false
+          packages:
+            - featherpad
+            - print-manager
+            - vlc
+            - xscreensaver
+        - name: CatOS LXQt customization
+          description: CatOS themes and login appearance
+          selected: true
+          critical: false
+          packages:
+            - catos-sddm-theme
+            - catos-gtk-settings
+            - catos-graphite-gtk-theme
+            - tela-circle-icon-theme-all
+    - name: MATE-Desktop
+      description: MATE desktop
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: MATE core
+          description: Desktop session, login manager and essential integration
+          selected: true
+          critical: true
+          packages:
+            - mate
+            - lightdm
+            - lightdm-slick-greeter
+            - network-manager-applet
+            - xdg-user-dirs-gtk
+            - gvfs
+        - name: MATE file integration
+          description: Network shares, removable media and Bluetooth
+          selected: true
+          critical: false
+          packages:
+            - blueman
+            - gvfs-afc
+            - gvfs-gphoto2
+            - gvfs-mtp
+            - gvfs-nfs
+            - gvfs-smb
+        - name: MATE applications
+          description: The standard MATE application collection
+          selected: true
+          critical: false
+          packages:
+            - mate-extra
+            - celluloid
+        - name: CatOS MATE customization
+          description: CatOS settings, themes and login appearance
+          selected: true
+          critical: false
+          packages:
+            - catos-lightdm-slick-theme
+            - tela-circle-icon-theme-all
+            - catos-mate-settings
+            - catos-gtk-settings
+            - catos-graphite-gtk-theme
+    - name: UKUI
+      description: UKUI desktop
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: UKUI core
+          description: Desktop group, login manager and essential integration
+          selected: true
+          critical: true
+          packages:
+            - ukui
+            - sddm
+            - accountsservice
+            - gvfs
+            - qt5-quickcontrols
+            - xdg-desktop-portal-gtk
+            - xdg-user-dirs-gtk
+        - name: UKUI file integration
+          description: Thunar-based file management integration
+          selected: true
+          critical: false
+          packages:
+            - thunar
+            - thunar-archive-plugin
+            - thunar-volman
+        - name: UKUI applications
+          description: Common desktop applications
+          selected: true
+          critical: false
+          packages:
+            - mate-terminal
+            - mate-system-monitor
+            - mate-control-center
+            - redshift
+            - gnome-screenshot
+        - name: CatOS UKUI customization
+          description: CatOS login theme and icon theme
+          selected: true
+          critical: false
+          packages:
+            - catos-sddm-theme
+            - tela-circle-icon-theme-all
 - name: "CPU specific Microcode update packages"
   description: "Microcode update image for AMD and Intel CPU"
   hidden: false
