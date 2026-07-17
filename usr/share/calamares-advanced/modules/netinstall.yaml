@@ -282,6 +282,62 @@
             - catos-gnome-settings
             - catos-gtk-settings
             - catos-graphite-gtk-theme
+    - name: Deepin-Desktop
+      description: Deepin Desktop Environment
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: DDE core
+          description: Session, Treeland compositor, display manager and system integration
+          selected: true
+          critical: true
+          packages:
+            - ddm
+            - treeland
+            - deepin-session
+            - deepin-shell
+            - deepin-daemon
+            - deepin-control-center
+            - deepin-launchpad
+            - deepin-polkit-agent
+            - deepin-network-core
+            - xdg-desktop-portal-dde
+        - name: DDE integration
+          description: File management, search and desktop services
+          selected: true
+          critical: false
+          packages:
+            - deepin-file-manager
+            - deepin-anything
+            - deepin-appearance
+            - deepin-application-manager
+            - deepin-screensaver
+            - deepin-system-monitor
+        - name: DDE applications
+          description: Common Deepin applications
+          selected: true
+          critical: false
+          packages:
+            - deepin-terminal
+            - deepin-editor
+            - deepin-image-viewer
+            - deepin-compressor
+            - deepin-screen-recorder
+            - deepin-calculator
+            - deepin-calendar
+            - deepin-movie
+        - name: DDE appearance
+          description: Deepin themes, icons, wallpapers and sound theme
+          selected: true
+          critical: false
+          packages:
+            - deepin-desktop-base
+            - deepin-desktop-theme
+            - deepin-gtk-theme
+            - deepin-icon-theme
+            - deepin-wallpapers
+            - deepin-sound-theme
     - name: Xfce4
       description: Xfce desktop
       hidden: false
@@ -660,6 +716,194 @@
             - catos-mate-settings
             - catos-gtk-settings
             - catos-graphite-gtk-theme
+    - name: Sway
+      description: CatOS Sway session
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: Sway core
+          description: Compositor, login manager and CatOS session preset
+          selected: true
+          critical: true
+          packages:
+            - sway
+            - ly
+            - xorg-xwayland
+            - catos-sway-settings
+        - name: Desktop services
+          description: Network, Bluetooth, audio and hardware controls
+          selected: true
+          critical: false
+          packages:
+            - network-manager-applet
+            - blueman
+            - pipewire-pulse
+            - wireplumber
+            - pavucontrol
+            - brightnessctl
+            - playerctl
+        - name: File integration
+          description: File manager, removable media and network shares
+          selected: true
+          critical: false
+          packages:
+            - thunar
+            - thunar-archive-plugin
+            - thunar-volman
+            - tumbler
+            - gvfs
+            - gvfs-afc
+            - gvfs-gphoto2
+            - gvfs-mtp
+            - gvfs-nfs
+            - gvfs-smb
+        - name: Wayland tools
+          description: Output, screenshot and clipboard utilities
+          selected: true
+          critical: false
+          packages:
+            - wdisplays
+            - grim
+            - slurp
+            - swappy
+            - wl-clipboard
+        - name: CatOS customization
+          description: CatOS GTK theme, icons, cursor and appearance tool
+          selected: true
+          critical: false
+          packages:
+            - catos-gtk-settings
+            - catos-graphite-gtk-theme
+            - catos-tela-icon-theme-blue
+            - catos-bibata-cursor
+            - nwg-look
+    - name: Labwc
+      description: CatOS Labwc session
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: Labwc core
+          description: Compositor, login manager and CatOS session preset
+          selected: true
+          critical: true
+          packages:
+            - labwc
+            - ly
+            - xorg-xwayland
+            - catos-labwc-settings
+        - name: Desktop services
+          description: Network, Bluetooth, audio and hardware controls
+          selected: true
+          critical: false
+          packages:
+            - network-manager-applet
+            - blueman
+            - pipewire-pulse
+            - wireplumber
+            - pavucontrol
+            - brightnessctl
+            - playerctl
+        - name: File integration
+          description: File manager, removable media and network shares
+          selected: true
+          critical: false
+          packages:
+            - thunar
+            - thunar-archive-plugin
+            - thunar-volman
+            - tumbler
+            - gvfs
+            - gvfs-afc
+            - gvfs-gphoto2
+            - gvfs-mtp
+            - gvfs-nfs
+            - gvfs-smb
+        - name: Wayland tools
+          description: Output, screenshot and clipboard utilities
+          selected: true
+          critical: false
+          packages:
+            - wdisplays
+            - grim
+            - slurp
+            - swappy
+            - wl-clipboard
+        - name: CatOS customization
+          description: CatOS GTK theme, icons, cursor and appearance tool
+          selected: true
+          critical: false
+          packages:
+            - catos-gtk-settings
+            - catos-graphite-gtk-theme
+            - catos-tela-icon-theme-blue
+            - catos-bibata-cursor
+            - nwg-look
+    - name: Wayfire
+      description: CatOS Wayfire session
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: Wayfire core
+          description: Compositor, shell, login manager and CatOS session preset
+          selected: true
+          critical: true
+          packages:
+            - wayfire
+            - wf-shell
+            - wcm
+            - ly
+            - xorg-xwayland
+            - catos-wayfire-settings
+        - name: Desktop services
+          description: Network, Bluetooth, audio and hardware controls
+          selected: true
+          critical: false
+          packages:
+            - network-manager-applet
+            - blueman
+            - pipewire-pulse
+            - wireplumber
+            - pavucontrol
+            - brightnessctl
+            - playerctl
+        - name: File integration
+          description: File manager, removable media and network shares
+          selected: true
+          critical: false
+          packages:
+            - thunar
+            - thunar-archive-plugin
+            - thunar-volman
+            - tumbler
+            - gvfs
+            - gvfs-afc
+            - gvfs-gphoto2
+            - gvfs-mtp
+            - gvfs-nfs
+            - gvfs-smb
+        - name: Wayland tools
+          description: Screenshot, clipboard and recording utilities
+          selected: true
+          critical: false
+          packages:
+            - grim
+            - slurp
+            - swappy
+            - wl-clipboard
+            - wf-recorder
+        - name: CatOS customization
+          description: CatOS GTK theme, icons, cursor and appearance tool
+          selected: true
+          critical: false
+          packages:
+            - catos-gtk-settings
+            - catos-graphite-gtk-theme
+            - catos-tela-icon-theme-blue
+            - catos-bibata-cursor
+            - nwg-look
     - name: UKUI
       description: UKUI desktop
       hidden: true

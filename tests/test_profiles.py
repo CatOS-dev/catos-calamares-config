@@ -148,6 +148,8 @@ class ProfileTests(unittest.TestCase):
         self.assertNotIn("Niri-dms", chooser_ids)
         self.assertNotIn("Hyprland-dms", chooser_ids)
         self.assertNotIn("UKUI", chooser_ids)
+        for desktop_id in ("Deepin-Desktop", "Sway", "Labwc", "Wayfire"):
+            self.assertIn(desktop_id, chooser_ids)
         self.assertTrue(ukui["hidden"])
         self.assertFalse(ukui["selected"])
         self.assertFalse(desktop_group["hidden"])
@@ -161,6 +163,19 @@ class ProfileTests(unittest.TestCase):
             self.assertTrue(all(group["selected"] for group in desktop["subgroups"]))
             self.assertTrue(all(group.get("packages") for group in desktop["subgroups"]))
 
+        expected_function_groups = {
+            "Sway": {"Sway core", "Desktop services", "File integration", "Wayland tools", "CatOS customization"},
+            "Labwc": {"Labwc core", "Desktop services", "File integration", "Wayland tools", "CatOS customization"},
+            "Wayfire": {"Wayfire core", "Desktop services", "File integration", "Wayland tools", "CatOS customization"},
+            "Deepin-Desktop": {"DDE core", "DDE integration", "DDE applications", "DDE appearance"},
+        }
+        desktops = {desktop["name"]: desktop for desktop in desktop_group["subgroups"]}
+        for desktop_name, subgroup_names in expected_function_groups.items():
+            self.assertEqual(
+                {subgroup["name"] for subgroup in desktops[desktop_name]["subgroups"]},
+                subgroup_names,
+            )
+
     def test_desktop_package_cleanup(self):
         chooser = load_yaml("usr/share/calamares-advanced/modules/packagechooser_desktop.conf")
         netinstall = load_yaml("usr/share/calamares-advanced/modules/netinstall.yaml")
@@ -168,6 +183,9 @@ class ProfileTests(unittest.TestCase):
         for item in chooser["items"]:
             self.assertLessEqual(len(item["description"]), 80)
             self.assertIn("description[zh_CN]", item)
+            screenshot = item["screenshot"]
+            if screenshot.startswith("/"):
+                self.assertTrue((ROOT / screenshot.lstrip("/")).is_file(), screenshot)
 
         all_packages = []
         for top_group in netinstall:
@@ -193,6 +211,14 @@ class ProfileTests(unittest.TestCase):
             "qt5-translations",
         }
         self.assertTrue(removed_packages.isdisjoint(all_packages))
+
+    def test_display_manager_fallbacks_are_exact(self):
+        dmcheck = (ROOT / "etc/calamares/scripts/dmcheck").read_text(encoding="utf-8")
+        self.assertIn('pacman -Qq "$1"', dmcheck)
+        self.assertIn("enable_display_manager ddm ddm.service", dmcheck)
+        self.assertIn("multi-user.target.wants/ly@tty2.service", dmcheck)
+        self.assertNotIn("pacman -Qs", dmcheck)
+        self.assertEqual(dmcheck.count("plasmalogin.service"), 1)
 
     def test_process_group_timeout_kills_children(self):
         module_path = ROOT / "usr/lib/calamares/modules/paru/process.py"

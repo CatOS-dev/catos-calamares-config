@@ -1,57 +1,31 @@
-#!/bin/bash
-#set -e
-###############################################################################
-# Author    :   Erik Dubois
-# Website   :   https://www.erikdubois.be
-# Website   :   https://www.arcolinux.info
-# Website   :   https://www.arcolinux.com
-# Website   :   https://www.arcolinuxd.com
-# Website   :   https://www.arcolinuxb.com
-# Website   :   https://www.arcolinuxiso.com
-# Website   :   https://www.arcolinuxforum.com
-###############################################################################
-#
-#   DO NOT JUST RUN THIS. EXAMINE AND JUDGE. RUN AT YOUR OWN RISK.
-#
-###############################################################################
+#!/bin/sh
+set -eu
 
-package=plasma-login-manager
-if pacman -Qs $package > /dev/null ; then
-    ln -sf /usr/lib/systemd/system/plasmalogin.service /etc/systemd/system/display-manager.service
-    exit 0
-fi
-package=sddm
-if pacman -Qs $package > /dev/null ; then
-    ln -sf /usr/lib/systemd/system/sddm.service /etc/systemd/system/display-manager.service
-    exit 0
-fi
-package=plasma-login-manager
-if pacman -Qs $package > /dev/null ; then
-    ln -sf /usr/lib/systemd/system/plasmalogin.service /etc/systemd/system/display-manager.service
-    exit 0
-fi
-package=gdm
-if pacman -Qs $package > /dev/null ; then
-    ln -sf /usr/lib/systemd/system/gdm.service /etc/systemd/system/display-manager.service
-    exit 0
-fi
-package=cosmic-greeter
-if pacman -Qs $package > /dev/null ; then
-    ln -sf /usr/lib/systemd/system/cosmic-greeter.service /etc/systemd/system/display-manager.service
-    exit 0
-fi
-package=lxdm
-if pacman -Qs $package > /dev/null ; then
-    ln -sf /usr/lib/systemd/system/lxdm.service /etc/systemd/system/display-manager.service
-    exit 0
-fi
-package=lightdm
-if pacman -Qs $package > /dev/null ; then
-    ln -sf /usr/lib/systemd/system/lightdm.service /etc/systemd/system/display-manager.service
-    exit 0
-fi
-package=ly
-if pacman -Qs $package > /dev/null ; then
-    ln -sf /usr/lib/systemd/system/ly.service /etc/systemd/system/display-manager.service
-    exit 0
+has_package() {
+    pacman -Qq "$1" >/dev/null 2>&1
+}
+
+enable_display_manager() {
+    package=$1
+    service=$2
+    if has_package "$package"; then
+        mkdir -p /etc/systemd/system
+        ln -sf "/usr/lib/systemd/system/$service" /etc/systemd/system/display-manager.service
+        exit 0
+    fi
+}
+
+enable_display_manager plasma-login-manager plasmalogin.service
+enable_display_manager sddm sddm.service
+enable_display_manager gdm gdm.service
+enable_display_manager cosmic-greeter cosmic-greeter.service
+enable_display_manager ddm ddm.service
+enable_display_manager lxdm lxdm.service
+enable_display_manager lightdm lightdm.service
+
+if has_package ly; then
+    rm -f /etc/systemd/system/display-manager.service
+    mkdir -p /etc/systemd/system/multi-user.target.wants
+    ln -sf /usr/lib/systemd/system/ly@.service \
+        /etc/systemd/system/multi-user.target.wants/ly@tty2.service
 fi
