@@ -80,7 +80,6 @@
         selected: true
         packages:
           - wqy-zenhei
-          - noto-fonts-emoji
           - ttf-jetbrains-mono-nerd
           - noto-fonts
           - noto-fonts-cjk
@@ -199,7 +198,6 @@
           - gnome-shell-extension-desktop-icons-ng
           - gnome-shell-extension-dash-to-dock
           - gnome-appfolders-manager
-          - gnome-tweaks
           - gnome-themes-extra
           - tela-circle-icon-theme-all
           - sassc

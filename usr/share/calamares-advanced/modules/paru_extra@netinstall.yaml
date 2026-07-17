@@ -1,15 +1,43 @@
 - name: "Chat Clients"
-  description: "聊天客户端, 不同版本的客户端不可同时安装"
+  description: "聊天客户端；同一客户端的不同实现建议只选择一个"
   selected: false
   expanded: true
-  packages:
-    - linuxqq
-    - linuxqq-appimage
-    - linuxqq-nt-bwrap
-    - wechat-bin
-    - wechat-appimage
-    - wechat-universal-bwrap
-    - wemeet-bin
+  subgroups:
+    - name: "QQ 官方包"
+      description: "Linux QQ 官方包"
+      selected: false
+      packages:
+        - linuxqq
+    - name: "QQ AppImage"
+      description: "Linux QQ AppImage 版本"
+      selected: false
+      packages:
+        - linuxqq-appimage
+    - name: "QQ bwrap"
+      description: "Linux QQ 的 bubblewrap 封装版本"
+      selected: false
+      packages:
+        - linuxqq-nt-bwrap
+    - name: "微信官方包"
+      description: "微信 Linux 官方包"
+      selected: false
+      packages:
+        - wechat-bin
+    - name: "微信 AppImage"
+      description: "微信 AppImage 版本"
+      selected: false
+      packages:
+        - wechat-appimage
+    - name: "微信 bwrap"
+      description: "微信的 bubblewrap 封装版本"
+      selected: false
+      packages:
+        - wechat-universal-bwrap
+    - name: "腾讯会议"
+      description: "腾讯会议客户端"
+      selected: false
+      packages:
+        - wemeet-bin
 - name: "Productivity"
   description: "生产力工具"
   selected: false
@@ -47,13 +75,27 @@
     - gitkraken
     - obsidian
 - name: "Browsers"
-  description: "浏览器"
+  description: "浏览器；按需选择一个或多个"
   selected: false
   expanded: true
-  packages:
-    - chromium
-    - ungoogled-chromium-bin
-    - google-chrome
-    - microsoft-edge-stable-bin
-    - brave-bin
-
+  subgroups:
+    - name: "Chromium"
+      selected: false
+      packages:
+        - chromium
+    - name: "Ungoogled Chromium"
+      selected: false
+      packages:
+        - ungoogled-chromium-bin
+    - name: "Google Chrome"
+      selected: false
+      packages:
+        - google-chrome
+    - name: "Microsoft Edge"
+      selected: false
+      packages:
+        - microsoft-edge-stable-bin
+    - name: "Brave"
+      selected: false
+      packages:
+        - brave-bin
