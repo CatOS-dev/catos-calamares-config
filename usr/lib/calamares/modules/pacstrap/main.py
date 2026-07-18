@@ -13,7 +13,14 @@ from libcalamares.utils import gettext_path, gettext_languages
 
 # Ensure local helper module is importable (pkgcheck.py in same directory)
 sys.path.insert(0, "/usr/lib/calamares/modules/pacstrap")
+sys.path.insert(0, "/usr/lib/calamares/modules/bootloadu")
 import pkgcheck  # noqa: E402
+from registry import (  # noqa: E402
+    RegistryError,
+    load_bootloader_registry,
+    missing_required_packages,
+    package_plan,
+)
 
 
 _translation = gettext.translation(
@@ -166,31 +173,39 @@ def run():
     if "basePackages" not in libcalamares.job.configuration:
         return "Package List Missing", "Cannot continue without list of packages to install"
 
-    base_packages = libcalamares.job.configuration["basePackages"]
-    if not isinstance(base_packages, list):
+    configured_packages = libcalamares.job.configuration["basePackages"]
+    if not isinstance(configured_packages, list):
         return "Bad configuration", "basePackages must be a list"
+    base_packages = list(configured_packages)
 
+    bootloader = (
+        libcalamares.globalstorage.value("bootloader.selected")
+        or libcalamares.globalstorage.value("packagechooser_bootloader")
+        or "grub"
+    )
+    partitions = libcalamares.globalstorage.value("partitions") or []
+    root_filesystem = next(
+        (partition.get("fs", "") for partition in partitions if partition.get("mountPoint") == "/"),
+        "",
+    )
+    snapshots_enabled = bool(libcalamares.globalstorage.value("snapshots.enabled"))
+    try:
+        registry = load_bootloader_registry()
+        boot_packages = package_plan(
+                registry,
+                str(bootloader),
+                snapshots_enabled=snapshots_enabled,
+                root_filesystem=root_filesystem,
+            )
+        base_packages.extend(boot_packages)
+    except RegistryError as error:
+        return "Invalid boot configuration", str(error)
 
-    # --- Add bootloader and rootfs-specific packages (if available) ---
-    bootloader = libcalamares.globalstorage.value("packagechooser_bootloader")
-
-    if not bootloader:
-        return "Bootloader selection missing", "Failed to determine the selected bootloader"
-    else:
-        libcalamares.utils.debug(f"Current bootloader: {bootloader}")
-        if bootloader == "grub":
-            base_packages += ["grub", "catos-grub-theme-dark", "os-prober"]
-        elif bootloader == "limine":
-            base_packages += ["limine", "limine-mkinitcpio-hook"]
-        elif bootloader == "refind":
-            base_packages += ["refind"]
-        elif bootloader == "systemd-boot":
-            base_packages += ["catos-systemd-boot-config"]
-        else:
-            return "Unsupported bootloader", f"Unsupported bootloader selection: {bootloader}"
-
-        base_packages += ["linux", "linux-headers"]
-
+    base_packages = list(dict.fromkeys(base_packages))
+    libcalamares.utils.debug(
+        f"Boot package plan: provider={bootloader}, snapshots={snapshots_enabled}, "
+        f"rootfs={root_filesystem}, packages={base_packages}"
+    )
 
     # --- NEW: optional sync + pkgcheck filtering (host-side) ---
     try:
@@ -201,6 +216,12 @@ def run():
 
     try:
         repo_pkgs, repo_groups = _build_repo_index_host()
+        missing_boot_packages = missing_required_packages(boot_packages, repo_pkgs, repo_groups)
+        if missing_boot_packages:
+            return (
+                "Required boot packages are unavailable",
+                "Missing required boot packages: " + ", ".join(missing_boot_packages),
+            )
         base_packages = pkgcheck.filter_operation_list(
             "basePackages",
             base_packages,

@@ -89,17 +89,6 @@
         packages:
           - linux-hardened
           - linux-hardened-headers
-- name: "Snapshot"
-  description: "快照工具, 建议Btrfs用户选择, 不需要可以不选"
-  hidden: false
-  selected: false
-  expanded: false
-  critical: true
-  packages:
-    - grub-btrfs
-    - btrfs-assistant
-    - snapper
-    - catos-snapper-config
 - name: "Linux Subsystem"
   description: "CatOS linux subsystem"
   hidden: false

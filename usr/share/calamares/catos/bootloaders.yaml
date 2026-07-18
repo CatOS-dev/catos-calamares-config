@@ -1,0 +1,102 @@
+version: 1
+installMarker: /run/calamares/bootloadu-installing
+defaultProvider: grub
+snapshotCommonPackages:
+  - snapper
+  - snap-pac
+  - catos-snapper-config
+providers:
+  grub:
+    displayName: GRUB
+    platforms:
+      - firmware: efi
+        architectures: [x86_64, aarch64]
+      - firmware: bios
+        architectures: [x86_64]
+    partition:
+      efi:
+        mountPoint: /boot/efi
+        recommendedSize: 300MiB
+        minimumSize: 300MiB
+      biosBootPartition: gpt-only
+    packages:
+      - grub
+      - catos-grub-theme-dark
+      - os-prober
+    kernelPackages: [linux, linux-headers]
+    snapshots:
+      manager: snapper
+      requiredFileSystems: [btrfs]
+      packages: [grub-btrfs, inotify-tools]
+  limine:
+    displayName: Limine
+    platforms:
+      - firmware: efi
+        architectures: [x86_64]
+    partition:
+      efi:
+        mountPoint: /boot/efi
+        recommendedSize: 2GiB
+        minimumSize: 1GiB
+      requiredPartitionTableType: [gpt]
+      biosBootPartition: never
+    packages:
+      - limine
+      - limine-tool
+    kernelPackages: [linux, linux-headers]
+    snapshots:
+      manager: snapper
+      requiredFileSystems: [btrfs]
+      packages: [limine-btrfs]
+  systemd-boot:
+    displayName: systemd-boot
+    platforms:
+      - firmware: efi
+        architectures: [x86_64, aarch64]
+    partition:
+      efi:
+        mountPoint: /boot/efi
+        recommendedSize: 2GiB
+        minimumSize: 1GiB
+      requiredPartitionTableType: [gpt]
+      biosBootPartition: never
+    packages:
+      - catos-systemd-boot-config
+    kernelPackages: [linux, linux-headers]
+    snapshots:
+      manager: snapper
+      requiredFileSystems: [btrfs]
+      packages: [sdboot-btrfs]
+  uki:
+    displayName: Unified Kernel Image
+    platforms:
+      - firmware: efi
+        architectures: [x86_64, aarch64]
+    partition:
+      efi:
+        mountPoint: /boot/efi
+        recommendedSize: 2GiB
+        minimumSize: 1GiB
+      requiredPartitionTableType: [gpt]
+      biosBootPartition: never
+    packages:
+      - catos-firmware-boot
+      - systemd-ukify
+    kernelPackages: [linux, linux-headers]
+    snapshots: null
+  efistub:
+    displayName: Linux EFI Stub
+    platforms:
+      - firmware: efi
+        architectures: [x86_64, aarch64]
+    partition:
+      efi:
+        mountPoint: /boot/efi
+        recommendedSize: 2GiB
+        minimumSize: 1GiB
+      requiredPartitionTableType: [gpt]
+      biosBootPartition: never
+    packages:
+      - catos-firmware-boot
+    kernelPackages: [linux, linux-headers]
+    snapshots: null

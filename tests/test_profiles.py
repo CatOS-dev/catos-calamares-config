@@ -32,21 +32,36 @@ class ProfileTests(unittest.TestCase):
         self.assertNotIn("zfs", jobs)
         self.assertNotIn("zfshostid", jobs)
         self.assertIn("pacstrap@default", jobs)
-        self.assertIn("shellprocess@grub", jobs)
+        self.assertIn("bootloadu", jobs)
+        for legacy_job in ("shellprocess@grub", "grubcfg", "bootloader", "initcpiocfg", "initcpio"):
+            self.assertNotIn(legacy_job, jobs)
         instances = {
             f"{item['module']}@{item['id']}"
             for item in settings.get("instances", [])
         }
-        self.assertIn("shellprocess@grub", instances)
-        self.assertLess(jobs.index("paru@default"), jobs.index("shellprocess@final"))
+        self.assertNotIn("shellprocess@grub", instances)
+        self.assertLess(jobs.index("paru@default"), jobs.index("bootloadu"))
+        self.assertLess(jobs.index("bootloadu"), jobs.index("services-systemd"))
+        self.assertLess(jobs.index("services-systemd"), jobs.index("shellprocess@final"))
         self.assertLess(jobs.index("shellprocess@final"), jobs.index("preservefiles"))
         self.assertLess(jobs.index("preservefiles"), jobs.index("umount"))
+
+    def test_offline_profile_does_not_offer_unavailable_snapshots(self):
+        offline = load_yaml("etc/calamares/modules/partition.conf")
+        advanced = load_yaml("usr/share/calamares-advanced/modules/partition.conf")
+        self.assertFalse(offline["allowSnapshots"])
+        self.assertNotEqual(advanced.get("allowSnapshots", True), False)
 
     def test_offline_job_order(self):
         settings = load_yaml("etc/calamares/settings.conf")
         jobs = exec_sequence(settings)
         self.assertNotIn("zfs", jobs)
         self.assertNotIn("zfshostid", jobs)
+        self.assertIn("bootloadu", jobs)
+        for legacy_job in ("shellprocess@grub", "grubcfg", "bootloader", "initcpiocfg", "initcpio"):
+            self.assertNotIn(legacy_job, jobs)
+        self.assertLess(jobs.index("packages"), jobs.index("bootloadu"))
+        self.assertLess(jobs.index("bootloadu"), jobs.index("services-systemd"))
         self.assertLess(jobs.index("preservefiles"), jobs.index("umount"))
 
     def test_domestic_https_connectivity_checks(self):
@@ -97,7 +112,103 @@ class ProfileTests(unittest.TestCase):
 
         pacstrap_main = (ROOT / "usr/lib/calamares/modules/pacstrap/main.py").read_text(encoding="utf-8")
         self.assertNotIn("zfs-utils", pacstrap_main)
-        self.assertIn('["linux", "linux-headers"]', pacstrap_main)
+        registry = load_yaml("usr/share/calamares/catos/bootloaders.yaml")
+        for provider in registry["providers"].values():
+            self.assertEqual(provider["kernelPackages"], ["linux", "linux-headers"])
+
+    def test_unified_bootloader_assets_and_install_marker(self):
+        registry = load_yaml("usr/share/calamares/catos/bootloaders.yaml")
+        self.assertEqual(
+            set(registry["providers"]),
+            {"grub", "limine", "systemd-boot", "uki", "efistub"},
+        )
+        self.assertEqual(registry["installMarker"], "/run/calamares/bootloadu-installing")
+
+        for relative in (
+            "etc/calamares/modules/partition.conf",
+            "usr/share/calamares-advanced/modules/partition.conf",
+        ):
+            partition_config = load_yaml(relative)
+            self.assertEqual(
+                partition_config["bootloaderProfilesFile"],
+                "/usr/share/calamares/catos/bootloaders.yaml",
+            )
+
+        module = ROOT / "usr/lib/calamares/modules/bootloadu"
+        for relative in (
+            "module.desc",
+            "main.py",
+            "context.py",
+            "registry.py",
+            "providers/base.py",
+            "providers/grub.py",
+            "providers/limine.py",
+            "providers/systemd_boot.py",
+            "providers/uki.py",
+            "providers/efistub.py",
+            "providers/firmware.py",
+        ):
+            self.assertTrue((module / relative).is_file(), relative)
+
+        for relative in (
+            "etc/calamares/modules/shellprocess-init.conf",
+            "usr/share/calamares-advanced/modules/shellprocess-init.conf",
+        ):
+            init_config = load_yaml(relative)
+            self.assertEqual(
+                init_config["script"][:4],
+                [
+                    "mkdir -p /run/calamares",
+                    "touch /run/calamares/bootloadu-installing",
+                    "mkdir -p ${ROOT}/run/calamares",
+                    "touch ${ROOT}/run/calamares/bootloadu-installing",
+                ],
+            )
+            self.assertIn(
+                "cp /etc/calamares/scripts/adjust_grub_theme_after.sh ${ROOT}/run/calamares/adjust_grub_theme_after.sh",
+                init_config["script"],
+            )
+
+    def test_bootloader_registry_drives_pacstrap(self):
+        registry = load_yaml("usr/share/calamares/catos/bootloaders.yaml")
+        pacstrap = (ROOT / "usr/lib/calamares/modules/pacstrap/main.py").read_text(encoding="utf-8")
+        self.assertIn("load_bootloader_registry", pacstrap)
+        self.assertNotIn('if bootloader == "grub"', pacstrap)
+        self.assertNotIn('elif bootloader == "limine"', pacstrap)
+
+        pacstrap_config = load_yaml("usr/share/calamares-advanced/modules/pacstrap.conf")
+        self.assertIn("mkinitcpio-openswap", pacstrap_config["basePackages"])
+
+        software = load_yaml("usr/share/calamares-advanced/modules/software@netinstall.yaml")
+        snapshot_groups = [group for group in software if group.get("name") == "Snapshot"]
+        self.assertFalse(snapshot_groups)
+
+        package_root = ROOT.parent.parent / "CatOS-PKGBUILD"
+        for package in (
+            "limine-btrfs",
+            "sdboot-btrfs",
+            "catos-systemd-boot-config",
+            "catos-snapper-config",
+            "catos-firmware-boot",
+        ):
+            self.assertTrue((package_root / package / "PKGBUILD").is_file(), package)
+
+        for provider in ("uki", "efistub"):
+            self.assertIn(
+                "catos-firmware-boot",
+                registry["providers"][provider]["packages"],
+            )
+
+        firmware_updater = package_root / "catos-firmware-boot/catos-firmware-boot-update"
+        firmware_hook = package_root / "catos-firmware-boot/95-catos-firmware-boot.hook"
+        self.assertIn("bootloadu-installing", firmware_updater.read_text(encoding="utf-8"))
+        self.assertIn("catos-firmware-boot-update --hook", firmware_hook.read_text(encoding="utf-8"))
+
+    def test_limine_deploy_hook_tracks_limine_tool(self):
+        hook = (
+            ROOT.parent / "limine-tool/packaging/arch/rootfs/usr/share/libalpm/hooks/80-limine-efi-deploy.hook"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Target = limine-tool", hook)
 
     def test_branding_and_schema_ids(self):
         bootloader = load_yaml("etc/calamares/modules/bootloader.conf")
