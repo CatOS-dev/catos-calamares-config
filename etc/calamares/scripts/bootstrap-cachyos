@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Redirect standard error to standard output since Calamares does not capture it.
+exec 2>&1
+
+set -u
+
+PACMAN_CONFIG="${CACHYOS_BOOTSTRAP_PACMAN_CONFIG:-/etc/pacman.conf}"
+KEYSERVER="hkps://keyserver.ubuntu.com"
+CACHYOS_KEY="882DCFE48E2051D48E2562ABF3B607488DB35A47"
+
+if [[ ! -r "$PACMAN_CONFIG" ]] || ! grep -qi 'cachyos' "$PACMAN_CONFIG"; then
+    echo "CachyOS repositories are not enabled; skipping CachyOS bootstrap."
+    exit 0
+fi
+
+GPG_DIR="$(pacman-conf GPGDir 2>/dev/null || printf '%s\n' /etc/pacman.d/gnupg)"
+
+cleanup_keyring_daemons() {
+    gpgconf --homedir "$GPG_DIR" --kill all >/dev/null 2>&1 || true
+}
+trap cleanup_keyring_daemons EXIT
+
+receive_and_lsign() {
+    local fingerprint="$1"
+    local attempt
+
+    for attempt in 1 2 3; do
+        if pacman-key --keyserver "$KEYSERVER" --recv-keys "$fingerprint" \
+            && pacman-key --lsign-key "$fingerprint"; then
+            return 0
+        fi
+        sleep 2
+    done
+
+    echo "Failed to bootstrap CachyOS signing key: $fingerprint"
+    return 1
+}
+
+install_keyring() {
+    local attempt
+
+    for attempt in 1 2 3 4 5; do
+        if pacman -Sy --noconfirm --needed cachyos/cachyos-keyring; then
+            return 0
+        fi
+        sleep 2
+    done
+
+    echo "Failed to install cachyos-keyring."
+    return 1
+}
+
+install_cachyos_pacman() {
+    local attempt
+
+    for attempt in 1 2 3 4 5; do
+        # Deliberately omit --needed: this transaction must replace/reinstall
+        # the standard Arch pacman with the CachyOS repository build.
+        if pacman -S --noconfirm cachyos/pacman; then
+            return 0
+        fi
+        sleep 2
+    done
+
+    echo "Failed to install the CachyOS pacman build."
+    return 1
+}
+
+enable_automatic_architecture() {
+    if ! grep -Eq '^[[:space:]]*Architecture[[:space:]]*=.*$' "$PACMAN_CONFIG"; then
+        echo "Failed to enable CachyOS automatic architecture detection: no Architecture setting."
+        return 1
+    fi
+
+    sed -i -E \
+        '0,/^[[:space:]]*Architecture[[:space:]]*=.*$/{s//Architecture = auto/}' \
+        "$PACMAN_CONFIG"
+}
+
+pacman-key --init || exit 1
+pacman-key --populate archlinux || exit 1
+receive_and_lsign "$CACHYOS_KEY" || exit 1
+install_keyring || exit 1
+pacman-key --populate cachyos || exit 1
+install_cachyos_pacman || exit 1
+enable_automatic_architecture || exit 1

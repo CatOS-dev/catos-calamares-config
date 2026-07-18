@@ -15,6 +15,12 @@ from libcalamares.utils import gettext_path, gettext_languages
 sys.path.insert(0, "/usr/lib/calamares/modules/pacstrap")
 sys.path.insert(0, "/usr/lib/calamares/modules/bootloadu")
 import pkgcheck  # noqa: E402
+from pacstrap_repository import (  # noqa: E402
+    CACHYOS_SELECTION,
+    install_repository_config,
+    pacman_config_for,
+    transform_packages,
+)
 from registry import (  # noqa: E402
     RegistryError,
     load_bootloader_registry,
@@ -116,7 +122,7 @@ def _has_internet():
     )
 
 
-def _maybe_sync_db_host():
+def _maybe_sync_db_host(pacman_config):
     """
     Optional pacman -Sy before pkgcheck so the local sync DB isn't stale.
     Controlled by job config: sync_db (default True).
@@ -132,15 +138,22 @@ def _maybe_sync_db_host():
 
     libcalamares.utils.debug("Syncing pacman database before pkgcheck (pacman -Sy)...")
     # Using run_in_host so output goes through line_cb for UI/log.
-    run_in_host(["pacman", "-Sy", "--noconfirm"], line_cb)
+    run_in_host(
+        ["pacman", "--config", pacman_config, "-Sy", "--noconfirm"],
+        line_cb,
+    )
 
 
-def _build_repo_index_host():
+def _build_repo_index_host(pacman_config):
     """
     Build (packages_set, groups_set) on host (live environment).
     """
-    pkgs = set(_host_capture_lines(["pacman", "-Slq"]))
-    groups = set(_host_capture_lines(["pacman", "-Sgq"]))
+    pkgs = set(
+        _host_capture_lines(["pacman", "--config", pacman_config, "-Slq"])
+    )
+    groups = set(
+        _host_capture_lines(["pacman", "--config", pacman_config, "-Sgq"])
+    )
     libcalamares.utils.debug(f"[host] pacman repo index: {len(pkgs)} packages, {len(groups)} groups")
     return pkgs, groups
 
@@ -183,6 +196,21 @@ def run():
     required_packages = list(configured_required)
     base_packages.extend(required_packages)
 
+    repository_selection = (
+        libcalamares.globalstorage.value("packagechooser_repository") or "catos"
+    )
+    if repository_selection not in {"catos", CACHYOS_SELECTION}:
+        return (
+            "Invalid repository selection",
+            f"Unsupported repository selection: {repository_selection}",
+        )
+    pacman_config = pacman_config_for(repository_selection)
+    if not os.path.isfile(pacman_config):
+        return (
+            "Repository configuration missing",
+            f"Required pacman configuration does not exist: {pacman_config}",
+        )
+
     bootloader = (
         libcalamares.globalstorage.value("bootloader.selected")
         or libcalamares.globalstorage.value("packagechooser_bootloader")
@@ -202,25 +230,28 @@ def run():
                 snapshots_enabled=snapshots_enabled,
                 root_filesystem=root_filesystem,
             )
+        boot_packages = transform_packages(boot_packages, repository_selection)
         base_packages.extend(boot_packages)
     except RegistryError as error:
         return "Invalid boot configuration", str(error)
 
+    base_packages = transform_packages(base_packages, repository_selection)
     base_packages = list(dict.fromkeys(base_packages))
     libcalamares.utils.debug(
         f"Boot package plan: provider={bootloader}, snapshots={snapshots_enabled}, "
-        f"rootfs={root_filesystem}, packages={base_packages}"
+        f"rootfs={root_filesystem}, repository={repository_selection}, "
+        f"pacman_config={pacman_config}, packages={base_packages}"
     )
 
     # --- NEW: optional sync + pkgcheck filtering (host-side) ---
     try:
-        _maybe_sync_db_host()
+        _maybe_sync_db_host(pacman_config)
     except PacmanError as e:
         # Don't abort just because sync failed; continue with existing DB.
         libcalamares.utils.warning(f"pacman -Sy failed; continuing with existing sync DB: {e}")
 
     try:
-        repo_pkgs, repo_groups = _build_repo_index_host()
+        repo_pkgs, repo_groups = _build_repo_index_host(pacman_config)
         required_install_packages = list(dict.fromkeys(required_packages + boot_packages))
         missing_install_packages = missing_required_packages(
             required_install_packages, repo_pkgs, repo_groups
@@ -250,9 +281,14 @@ def run():
         libcalamares.job.setprogress(1.0)
         return None
 
-    # Keep pacstrap's default keyring-copy behavior. shellprocess@init has
-    # already fetched and locally trusted the CatOS and Arch4Edu signing keys.
-    pacstrap_command = ["pacstrap", root_mount_point] + base_packages
+    # Keep pacstrap's default keyring-copy behavior. The preceding jobs have
+    # already fetched and locally trusted all selected repository signing keys.
+    pacstrap_command = [
+        "pacstrap",
+        "-C",
+        pacman_config,
+        root_mount_point,
+    ] + base_packages
     try:
         run_in_host(pacstrap_command, line_cb)
     except PacmanError as pe:
@@ -260,10 +296,23 @@ def run():
     except Exception as e:
         return "Failed to run pacstrap", f"pacstrap failed: {e!s}"
 
+    try:
+        install_repository_config(root_mount_point, repository_selection)
+    except Exception as error:
+        return (
+            "Failed to install repository configuration",
+            f"Could not copy pacman configuration into target: {error!s}",
+        )
+
     # --- copy files post install ---
     if "postInstallFiles" in libcalamares.job.configuration:
         files_to_copy = libcalamares.job.configuration["postInstallFiles"]
         for source_file in files_to_copy:
+            if (
+                repository_selection == CACHYOS_SELECTION
+                and source_file == "/etc/pacman.conf"
+            ):
+                continue
             if os.path.exists(source_file):
                 try:
                     libcalamares.utils.debug("Copying file {!s}".format(source_file))

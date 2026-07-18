@@ -234,5 +234,93 @@ class ProfileTests(unittest.TestCase):
             with self.assertRaises(ProcessLookupError):
                 os.kill(child_pid, 0)
 
+    def test_cachyos_repository_is_online_profile_only(self):
+        advanced = load_yaml("usr/share/calamares-advanced/settings.conf")
+        offline = load_yaml("etc/calamares/settings.conf")
+
+        advanced_instances = {
+            f"{item['module']}@{item['id']}": item
+            for item in advanced.get("instances", [])
+        }
+        self.assertIn("packagechooser@repository", advanced_instances)
+        self.assertIn("contextualprocess@repository", advanced_instances)
+
+        advanced_show = next(phase["show"] for phase in advanced["sequence"] if "show" in phase)
+        advanced_exec = exec_sequence(advanced)
+        self.assertIn("packagechooser@repository", advanced_show)
+        self.assertLess(
+            advanced_exec.index("shellprocess@init"),
+            advanced_exec.index("contextualprocess@repository"),
+        )
+        self.assertLess(
+            advanced_exec.index("contextualprocess@repository"),
+            advanced_exec.index("pacstrap@default"),
+        )
+
+        chooser = load_yaml(
+            "usr/share/calamares-advanced/modules/packagechooser_repository.conf"
+        )
+        self.assertEqual(chooser["method"], "legacy")
+        self.assertEqual(chooser["default"], "catos")
+        self.assertEqual([item["id"] for item in chooser["items"]], ["catos", "cachyos"])
+
+        offline_instances = {
+            f"{item['module']}@{item['id']}"
+            for item in offline.get("instances", [])
+        }
+        self.assertNotIn("packagechooser@repository", offline_instances)
+        self.assertNotIn("contextualprocess@repository", offline_instances)
+
+        offline_profile_files = [ROOT / "etc/calamares/settings.conf"]
+        offline_profile_files.extend(
+            path
+            for path in (ROOT / "etc/calamares/modules").rglob("*")
+            if path.is_file()
+        )
+        offline_text = "\n".join(
+            path.read_text(encoding="utf-8", errors="ignore")
+            for path in offline_profile_files
+        ).lower()
+        self.assertNotIn("cachyos", offline_text)
+
+    def test_cachyos_bootstrap_runs_unconditionally_before_package_jobs(self):
+        bootstrap = "/etc/calamares/scripts/bootstrap-cachyos"
+
+        advanced_before = load_yaml(
+            "usr/share/calamares-advanced/modules/shellprocess-before.conf"
+        )
+        advanced_commands = [
+            item.get("command") if isinstance(item, dict) else item
+            for item in advanced_before["script"]
+        ]
+        self.assertIn(bootstrap, advanced_commands)
+        self.assertLess(
+            advanced_commands.index(bootstrap),
+            advanced_commands.index("/etc/calamares/scripts/create-pacman-keyring"),
+        )
+
+        advanced_jobs = exec_sequence(
+            load_yaml("usr/share/calamares-advanced/settings.conf")
+        )
+        self.assertLess(
+            advanced_jobs.index("pacstrap@default"),
+            advanced_jobs.index("shellprocess@before"),
+        )
+        self.assertLess(
+            advanced_jobs.index("shellprocess@before"),
+            advanced_jobs.index("pacman@default"),
+        )
+
+        pacstrap = load_yaml("usr/share/calamares-advanced/modules/pacstrap.conf")
+        self.assertIn(bootstrap, pacstrap["postInstallFiles"])
+
+        repository_job = load_yaml(
+            "usr/share/calamares-advanced/modules/contextualprocess_repository.conf"
+        )
+        self.assertEqual(
+            repository_job["packagechooser_repository"]["cachyos"],
+            "/usr/bin/python3 /etc/calamares/scripts/cachyos-repository.py",
+        )
+
 if __name__ == "__main__":
     unittest.main()
