@@ -21,6 +21,7 @@ providers:
       biosBootPartition: gpt-only
     packages:
       - grub
+      - efibootmgr
       - catos-grub-theme-dark
       - os-prober
     kernelPackages: [linux, linux-headers]

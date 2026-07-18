@@ -159,22 +159,14 @@ def _write_mkinitcpio_arrays(path: Path, arrays: dict[str, list[str]]) -> None:
 def configure_mkinitcpio(context) -> None:
     path = context.target_path("/etc/mkinitcpio.conf")
     arrays = _mkinitcpio_arrays(path)
-    arrays["FILES"] = [path for path in arrays["FILES"] if path != "/crypto_keyfile.bin"]
-    use_systemd = "systemd" in arrays["HOOKS"]
-
-    if use_systemd:
-        hooks = ["systemd", "autodetect", "microcode", "kms", "modconf", "block", "keyboard", "sd-vconsole"]
-    else:
-        hooks = ["base", "udev", "autodetect", "microcode", "kms", "modconf", "block", "keyboard", "keymap", "consolefont"]
-
-    if target_has("plymouth"):
-        hooks.append("plymouth")
+    arrays["FILES"] = [entry for entry in arrays["FILES"] if entry != "/crypto_keyfile.bin"]
 
     uses_btrfs = False
     uses_lvm = False
     encrypted_root = False
     encrypted_swap = False
     has_swap = False
+    has_separate_usr = False
     for partition in context.partitions:
         filesystem = str(partition.get("fs", ""))
         if filesystem == "linuxswap" and not partition.get("claimed"):
@@ -189,18 +181,32 @@ def configure_mkinitcpio(context) -> None:
         if partition.get("mountPoint") == "/" and partition.get("luksMapperName"):
             encrypted_root = True
         if partition.get("mountPoint") == "/usr":
-            hooks.append("usr")
+            has_separate_usr = True
 
-    if encrypted_root:
+    # The traditional encrypt hook handles one encrypted root device. Multiple
+    # encrypted devices, including encrypted swap, are handled by sd-encrypt.
+    use_systemd = "systemd" in arrays["HOOKS"] or encrypted_swap
+    if use_systemd:
+        hooks = ["base", "systemd", "autodetect", "microcode", "modconf", "kms", "keyboard", "sd-vconsole"]
+    else:
+        hooks = ["base", "udev", "autodetect", "microcode", "modconf", "kms", "keyboard", "keymap", "consolefont", "block"]
+
+    if target_has("plymouth"):
+        hooks.append("plymouth")
+    if has_separate_usr and not use_systemd:
+        hooks.append("usr")
+
+    if encrypted_root or encrypted_swap:
         hooks.append("sd-encrypt" if use_systemd else "encrypt")
+    if encrypted_root:
         keyfile = context.target_path("/crypto_keyfile.bin")
         if not has_unencrypted_separate_boot(context) and keyfile.is_file():
             arrays["FILES"].append("/crypto_keyfile.bin")
+    if use_systemd:
+        hooks.append("block")
     if uses_lvm:
         hooks.append("lvm2")
-    if encrypted_root and encrypted_swap and not use_systemd:
-        hooks.append("openswap")
-    if has_swap:
+    if has_swap and not use_systemd:
         hooks.append("resume")
     hooks.append("filesystems")
     if not uses_btrfs:

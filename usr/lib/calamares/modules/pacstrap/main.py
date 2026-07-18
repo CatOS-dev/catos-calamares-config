@@ -176,7 +176,12 @@ def run():
     configured_packages = libcalamares.job.configuration["basePackages"]
     if not isinstance(configured_packages, list):
         return "Bad configuration", "basePackages must be a list"
+    configured_required = libcalamares.job.configuration.get("requiredPackages", [])
+    if not isinstance(configured_required, list):
+        return "Bad configuration", "requiredPackages must be a list"
     base_packages = list(configured_packages)
+    required_packages = list(configured_required)
+    base_packages.extend(required_packages)
 
     bootloader = (
         libcalamares.globalstorage.value("bootloader.selected")
@@ -216,11 +221,14 @@ def run():
 
     try:
         repo_pkgs, repo_groups = _build_repo_index_host()
-        missing_boot_packages = missing_required_packages(boot_packages, repo_pkgs, repo_groups)
-        if missing_boot_packages:
+        required_install_packages = list(dict.fromkeys(required_packages + boot_packages))
+        missing_install_packages = missing_required_packages(
+            required_install_packages, repo_pkgs, repo_groups
+        )
+        if missing_install_packages:
             return (
-                "Required boot packages are unavailable",
-                "Missing required boot packages: " + ", ".join(missing_boot_packages),
+                "Required installation packages are unavailable",
+                "Missing required packages: " + ", ".join(missing_install_packages),
             )
         base_packages = pkgcheck.filter_operation_list(
             "basePackages",

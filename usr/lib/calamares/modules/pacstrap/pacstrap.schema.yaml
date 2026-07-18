@@ -5,6 +5,7 @@ additionalProperties: false
 type: object
 properties:
     basePackages: { type: array }
+    requiredPackages: { type: array, default: [] }
     postInstallFiles: { type: array }
     sync_db: { type: boolean, default: true }
 required: [ basePackages ]

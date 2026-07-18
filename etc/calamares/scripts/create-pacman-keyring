@@ -7,6 +7,13 @@ set -u
 KEYSERVER="hkps://keyserver.ubuntu.com"
 CATOS_KEY="47BCD014C8A99B55AADAEE58F57BDFADBFCF8A1E"
 ARCH4EDU_BOOTSTRAP_KEY="CCED9BE21E1173C61DC1C9407931B6D628C8D3BA"
+ARCHLINUXCN_BOOTSTRAP_KEY="B5971F2C5C10A9A08C60030F786C63F330D7CB92"
+GPG_DIR="$(pacman-conf GPGDir 2>/dev/null || printf '%s\n' /etc/pacman.d/gnupg)"
+
+cleanup_keyring_daemons() {
+    gpgconf --homedir "$GPG_DIR" --kill all >/dev/null 2>&1 || true
+}
+trap cleanup_keyring_daemons EXIT
 
 receive_and_lsign() {
     local fingerprint="$1"
@@ -25,6 +32,7 @@ receive_and_lsign() {
 }
 
 pacman-key --init || exit 1
+pacman-key --populate archlinux || exit 1
 
 # CatOS packages are verified with the release key fetched independently from
 # the package repository. The target intentionally does not install catos-keyring.
@@ -33,13 +41,24 @@ receive_and_lsign "$CATOS_KEY" || exit 1
 # Trust the Arch4Edu repository signing key before refreshing databases.
 receive_and_lsign "$ARCH4EDU_BOOTSTRAP_KEY" || exit 1
 
-for ((i=0; i<5; i++)); do
-    pacman -Sy --noconfirm --needed archlinux-keyring && break
-    sleep 2
-done
-for ((i=0; i<5; i++)); do
-    pacman -Sy --noconfirm --needed archlinuxcn-keyring && break
-    sleep 2
-done
+# Verify the signed archlinuxcn-keyring bootstrap package.
+receive_and_lsign "$ARCHLINUXCN_BOOTSTRAP_KEY" || exit 1
 
+install_keyring_package() {
+    local package="$1"
+    local attempt
+
+    for attempt in 1 2 3 4 5; do
+        if pacman -Sy --noconfirm --needed "$package"; then
+            return 0
+        fi
+        sleep 2
+    done
+
+    echo "Failed to install keyring package: $package"
+    return 1
+}
+
+install_keyring_package archlinux-keyring || exit 1
+install_keyring_package archlinuxcn-keyring || exit 1
 pacman-key --populate || exit 1

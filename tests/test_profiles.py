@@ -27,6 +27,7 @@ class ProfileTests(unittest.TestCase):
         jobs = exec_sequence(settings)
         self.assertNotIn("zfs", jobs)
         self.assertNotIn("zfshostid", jobs)
+        self.assertNotIn("luksopenswaphookcfg", jobs)
         self.assertIn("pacstrap@default", jobs)
         self.assertIn("bootloadu", jobs)
         for legacy_job in ("shellprocess@grub", "grubcfg", "bootloader", "initcpiocfg", "initcpio"):
@@ -42,6 +43,17 @@ class ProfileTests(unittest.TestCase):
         self.assertLess(jobs.index("shellprocess@final"), jobs.index("preservefiles"))
         self.assertLess(jobs.index("preservefiles"), jobs.index("umount"))
 
+    def test_gpg_daemons_are_stopped_before_umount(self):
+        for base in ("etc/calamares", "usr/share/calamares-advanced"):
+            final = load_yaml(f"{base}/modules/shellprocess-final.conf")
+            commands = [
+                item.get("command") if isinstance(item, dict) else item
+                for item in final["script"]
+            ]
+            cleanup = 'gpgconf --homedir "$(pacman-conf GPGDir)" --kill all'
+            self.assertIn(cleanup, commands, base)
+            self.assertEqual(commands.index(cleanup), len(commands) - 2, base)
+
     def test_offline_profile_does_not_offer_unavailable_snapshots(self):
         offline = load_yaml("etc/calamares/modules/partition.conf")
         advanced = load_yaml("usr/share/calamares-advanced/modules/partition.conf")
@@ -53,6 +65,7 @@ class ProfileTests(unittest.TestCase):
         jobs = exec_sequence(settings)
         self.assertNotIn("zfs", jobs)
         self.assertNotIn("zfshostid", jobs)
+        self.assertNotIn("luksopenswaphookcfg", jobs)
         self.assertIn("bootloadu", jobs)
         for legacy_job in ("shellprocess@grub", "grubcfg", "bootloader", "initcpiocfg", "initcpio"):
             self.assertNotIn(legacy_job, jobs)
@@ -112,15 +125,33 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(len(schema_ids), len(set(schema_ids)))
         pacstrap_schema = load_yaml("usr/lib/calamares/modules/pacstrap/pacstrap.schema.yaml")
         self.assertIn("sync_db", pacstrap_schema["properties"])
+        self.assertIn("requiredPackages", pacstrap_schema["properties"])
+
+    def test_advanced_profile_generates_machine_id(self):
+        config = load_yaml("usr/share/calamares-advanced/modules/machineid.conf")
+        self.assertTrue(config["systemd"])
+        self.assertEqual(config["systemd-style"], "uuid")
+        self.assertTrue(config["dbus"])
+        self.assertTrue(config["dbus-symlink"])
 
     def test_advanced_pacstrap_bootstraps_keys_before_install(self):
         config = load_yaml("usr/share/calamares-advanced/modules/pacstrap.conf")
         self.assertNotIn("catos-keyring", config["basePackages"])
+        self.assertIn("chwd", config["requiredPackages"])
+        self.assertIn("fish", config["requiredPackages"])
+        self.assertNotIn("mkinitcpio-openswap", config["basePackages"])
 
         settings = load_yaml("usr/share/calamares-advanced/settings.conf")
         jobs = exec_sequence(settings)
         self.assertLess(jobs.index("shellprocess@init"), jobs.index("pacstrap@default"))
-        self.assertLess(jobs.index("pacstrap@default"), jobs.index("shellprocess@before"))
+        init_config = load_yaml("usr/share/calamares-advanced/modules/shellprocess-init.conf")
+        init_commands = [
+            item.get("command") if isinstance(item, dict) else item
+            for item in init_config["script"]
+        ]
+        self.assertNotIn("/usr/bin/pacman -Sy --noconfirm", init_commands)
+        self.assertLess(jobs.index("pacstrap@default"), jobs.index("networkcfg"))
+        self.assertLess(jobs.index("networkcfg"), jobs.index("shellprocess@before"))
 
         script = (ROOT / "etc/calamares/scripts/create-pacman-keyring").read_text(
             encoding="utf-8"
@@ -129,8 +160,15 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("hkps://keyserver.ubuntu.com", script)
         self.assertIn("CCED9BE21E1173C61DC1C9407931B6D628C8D3BA", script)
         self.assertIn("ARCH4EDU_BOOTSTRAP_KEY", script)
-        self.assertNotIn("ARCHLINUXCN_BOOTSTRAP_KEY", script)
+        self.assertIn("B5971F2C5C10A9A08C60030F786C63F330D7CB92", script)
+        self.assertIn("ARCHLINUXCN_BOOTSTRAP_KEY", script)
         self.assertNotIn("3A9917BF0DED5C13F69AC68FABEC0A1208037BE9", script)
+        self.assertIn("pacman-key --populate archlinux || exit 1", script)
+        self.assertIn("install_keyring_package archlinux-keyring || exit 1", script)
+        self.assertIn("install_keyring_package archlinuxcn-keyring || exit 1", script)
+        self.assertNotIn("SigLevel = Optional TrustAll", script)
+        self.assertIn("trap cleanup_keyring_daemons EXIT", script)
+        self.assertIn("gpgconf --homedir", script)
 
     def test_desktop_profiles_match_the_chooser(self):
         chooser = load_yaml("usr/share/calamares-advanced/modules/packagechooser_desktop.conf")
