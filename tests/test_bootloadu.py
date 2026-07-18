@@ -48,6 +48,7 @@ class BootloaduTests(unittest.TestCase):
         self.assertIn("limine-tool", plan)
         self.assertIn("limine-btrfs", plan)
         self.assertIn("snapper", plan)
+        self.assertNotIn("snap-pac", plan)
         self.assertEqual(len(plan), len(set(plan)))
 
     def test_grub_snapshot_plan_installs_watcher_dependency(self):

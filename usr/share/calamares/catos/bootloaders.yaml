@@ -3,7 +3,6 @@ installMarker: /run/calamares/bootloadu-installing
 defaultProvider: grub
 snapshotCommonPackages:
   - snapper
-  - snap-pac
   - catos-snapper-config
 providers:
   grub:
