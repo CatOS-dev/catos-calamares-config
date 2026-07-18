@@ -92,11 +92,6 @@ def _mkinitcpio_arrays(path: Path) -> dict[str, list[str]]:
     return arrays
 
 
-def mkinitcpio_uses_systemd(context) -> bool:
-    hooks = _mkinitcpio_arrays(context.target_path("/etc/mkinitcpio.conf"))["HOOKS"]
-    return "systemd" in hooks
-
-
 def has_unencrypted_separate_boot(context) -> bool:
     return any(
         partition.get("mountPoint") == "/boot" and not partition.get("luksMapperName")
@@ -109,19 +104,11 @@ def kernel_cmdline(context) -> str:
     if target_has("plymouth"):
         parameters.append("splash")
 
-    use_systemd_naming = target_has("dracut") or mkinitcpio_uses_systemd(context)
-    separate_boot = has_unencrypted_separate_boot(context)
     root = context.root_partition
     if root.get("luksMapperName"):
         luks_uuid = root.get("luksUuid", "")
         mapper = root["luksMapperName"]
-        if use_systemd_naming:
-            parameters.append(f"rd.luks.uuid={luks_uuid}")
-            parameters.append(f"rd.luks.name={luks_uuid}={mapper}")
-            if not separate_boot and context.target_path("/crypto_keyfile.bin").is_file():
-                parameters.append("rd.luks.key=/crypto_keyfile.bin")
-        else:
-            parameters.append(f"cryptdevice=UUID={luks_uuid}:{mapper}")
+        parameters.append(f"cryptdevice=UUID={luks_uuid}:{mapper}")
         parameters.append(f"root=/dev/mapper/{mapper}")
     elif context.root_uuid:
         parameters.append(f"root=UUID={context.root_uuid}")
@@ -134,10 +121,6 @@ def kernel_cmdline(context) -> str:
             continue
         mapper = partition.get("luksMapperName")
         if mapper:
-            if use_systemd_naming and partition.get("luksUuid"):
-                luks_uuid = partition["luksUuid"]
-                parameters.append(f"rd.luks.uuid={luks_uuid}")
-                parameters.append(f"rd.luks.name={luks_uuid}={mapper}")
             parameters.append(f"resume=/dev/mapper/{mapper}")
         elif partition.get("uuid"):
             parameters.append(f"resume=UUID={partition['uuid']}")
@@ -190,30 +173,32 @@ def configure_mkinitcpio(context) -> None:
         if partition.get("mountPoint") == "/usr":
             has_separate_usr = True
 
-    # The traditional encrypt hook handles one encrypted root device. Multiple
-    # encrypted devices, including encrypted swap, are handled by sd-encrypt.
-    use_systemd = "systemd" in arrays["HOOKS"] or encrypted_swap
-    if use_systemd:
-        hooks = ["base", "systemd", "autodetect", "microcode", "modconf", "kms", "keyboard", "sd-vconsole"]
-    else:
-        hooks = ["base", "udev", "autodetect", "microcode", "modconf", "kms", "keyboard", "keymap", "consolefont", "block"]
-
+    hooks = [
+        "base",
+        "udev",
+        "autodetect",
+        "microcode",
+        "modconf",
+        "kms",
+        "keyboard",
+        "keymap",
+        "consolefont",
+        "block",
+    ]
     if target_has("plymouth"):
         hooks.append("plymouth")
-    if has_separate_usr and not use_systemd:
+    if has_separate_usr:
         hooks.append("usr")
-
-    if encrypted_root or encrypted_swap:
-        hooks.append("sd-encrypt" if use_systemd else "encrypt")
     if encrypted_root:
+        hooks.append("encrypt")
         keyfile = context.target_path("/crypto_keyfile.bin")
         if not has_unencrypted_separate_boot(context) and keyfile.is_file():
             arrays["FILES"].append("/crypto_keyfile.bin")
-    if use_systemd:
-        hooks.append("block")
     if uses_lvm:
         hooks.append("lvm2")
-    if has_swap and not use_systemd:
+    if encrypted_root and encrypted_swap:
+        hooks.append("openswap")
+    if has_swap:
         hooks.append("resume")
     hooks.append("filesystems")
     if not uses_btrfs:

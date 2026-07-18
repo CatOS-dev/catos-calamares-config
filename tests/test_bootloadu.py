@@ -92,146 +92,6 @@ class BootloaduTests(unittest.TestCase):
         self.assertFalse(platform_supported(limine, "bios", "x86_64"))
         self.assertFalse(platform_supported(limine, "efi", "aarch64"))
 
-    def test_kernel_command_line_matches_mkinitcpio_encryption_mode(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / "etc").mkdir()
-            context = types.SimpleNamespace(
-                root=root,
-                partitions=[
-                    {
-                        "mountPoint": "/",
-                        "fs": "btrfs",
-                        "uuid": "inner-root",
-                        "luksUuid": "outer-root",
-                        "luksMapperName": "cryptroot",
-                    },
-                    {
-                        "mountPoint": "",
-                        "fs": "linuxswap",
-                        "uuid": "inner-swap",
-                        "luksUuid": "outer-swap",
-                        "luksMapperName": "cryptswap",
-                        "claimed": True,
-                    },
-                ],
-                root_partition={
-                    "mountPoint": "/",
-                    "fs": "btrfs",
-                    "uuid": "inner-root",
-                    "luksUuid": "outer-root",
-                    "luksMapperName": "cryptroot",
-                },
-                root_filesystem="btrfs",
-                root_subvolume="/@",
-                root_uuid="inner-root",
-                root_encrypted=True,
-                target_path=lambda path: root / str(path).lstrip("/"),
-            )
-            (root / "crypto_keyfile.bin").write_bytes(b"key")
-
-            (root / "etc/mkinitcpio.conf").write_text(
-                "HOOKS=(base udev autodetect block encrypt filesystems)\n", encoding="utf-8"
-            )
-            with mock.patch.object(boot_base, "target_has", return_value=False):
-                cmdline = boot_base.kernel_cmdline(context)
-            self.assertIn("cryptdevice=UUID=outer-root:cryptroot", cmdline)
-            self.assertNotIn("rd.luks.uuid=outer-root", cmdline)
-
-            (root / "etc/mkinitcpio.conf").write_text(
-                "HOOKS=(systemd autodetect block sd-encrypt filesystems)\n", encoding="utf-8"
-            )
-            with mock.patch.object(boot_base, "target_has", side_effect=lambda program: program == "plymouth"):
-                cmdline = boot_base.kernel_cmdline(context)
-            self.assertIn("rd.luks.uuid=outer-root", cmdline)
-            self.assertIn("rd.luks.name=outer-root=cryptroot", cmdline)
-            self.assertIn("rd.luks.key=/crypto_keyfile.bin", cmdline)
-            self.assertIn("rd.luks.uuid=outer-swap", cmdline)
-            self.assertIn("rd.luks.name=outer-swap=cryptswap", cmdline)
-            self.assertIn("resume=/dev/mapper/cryptswap", cmdline)
-            self.assertIn("rootflags=subvol=/@", cmdline)
-
-    def test_encrypted_swap_forces_systemd_initramfs(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / "etc").mkdir()
-            (root / "crypto_keyfile.bin").write_bytes(b"key")
-            (root / "etc/mkinitcpio.conf").write_text(
-                "MODULES=(existing)\nBINARIES=()\nFILES=()\n"
-                "HOOKS=(base udev autodetect block filesystems fsck)\n",
-                encoding="utf-8",
-            )
-            root_partition = {
-                "mountPoint": "/",
-                "fs": "btrfs",
-                "uuid": "inner-root",
-                "luksUuid": "outer-root",
-                "luksMapperName": "cryptroot",
-            }
-            swap_partition = {
-                "mountPoint": "",
-                "fs": "linuxswap",
-                "uuid": "inner-swap",
-                "luksUuid": "outer-swap",
-                "luksMapperName": "cryptswap",
-                "claimed": True,
-            }
-            context = types.SimpleNamespace(
-                root=root,
-                partitions=[root_partition, swap_partition],
-                root_partition=root_partition,
-                root_filesystem="btrfs",
-                root_subvolume="/@",
-                root_uuid="inner-root",
-                root_encrypted=True,
-                target_path=lambda path: root / str(path).lstrip("/"),
-            )
-            with mock.patch.object(boot_base, "target_has", return_value=False):
-                boot_base.configure_mkinitcpio(context)
-                cmdline = boot_base.kernel_cmdline(context)
-            result = (root / "etc/mkinitcpio.conf").read_text(encoding="utf-8")
-            self.assertIn("systemd", result)
-            self.assertIn("sd-encrypt", result)
-            self.assertNotIn("openswap", result)
-            hooks = result.split("HOOKS=(", 1)[1].split(")", 1)[0].split()
-            self.assertNotIn("resume", hooks)
-            self.assertIn("FILES=(/crypto_keyfile.bin)", result)
-            self.assertNotIn(" fsck", result)
-            self.assertIn("MODULES=(existing)", result)
-            self.assertIn("rd.luks.uuid=outer-root", cmdline)
-            self.assertIn("rd.luks.name=outer-root=cryptroot", cmdline)
-            self.assertIn("rd.luks.uuid=outer-swap", cmdline)
-            self.assertIn("rd.luks.name=outer-swap=cryptswap", cmdline)
-            self.assertIn("resume=/dev/mapper/cryptswap", cmdline)
-            self.assertNotIn("cryptdevice=", cmdline)
-
-    def test_systemd_mkinitcpio_keeps_base_hook_and_recommended_order(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / "etc").mkdir()
-            (root / "etc/mkinitcpio.conf").write_text(
-                "HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block filesystems fsck)\n",
-                encoding="utf-8",
-            )
-            context = types.SimpleNamespace(
-                root=root,
-                partitions=[
-                    {"mountPoint": "/", "fs": "ext4"},
-                    {"mountPoint": "/usr", "fs": "ext4"},
-                ],
-                root_filesystem="ext4",
-                root_encrypted=False,
-                target_path=lambda path: root / str(path).lstrip("/"),
-            )
-            with mock.patch.object(boot_base, "target_has", return_value=False):
-                boot_base.configure_mkinitcpio(context)
-            result = (root / "etc/mkinitcpio.conf").read_text(encoding="utf-8")
-            hooks = result.split("HOOKS=(", 1)[1].split(")", 1)[0].split()
-            self.assertEqual(hooks[0:2], ["base", "systemd"])
-            self.assertLess(hooks.index("modconf"), hooks.index("kms"))
-            self.assertLess(hooks.index("sd-vconsole"), hooks.index("block"))
-            self.assertNotIn("usr", hooks)
-
     def test_snapshot_provider_appends_matching_overlayfs_hook(self):
         expected = {
             "grub": "grub-btrfs-overlayfs",
@@ -275,6 +135,36 @@ class BootloaduTests(unittest.TestCase):
                 boot_base.configure_mkinitcpio(context)
             result = (root / "etc/mkinitcpio.conf").read_text(encoding="utf-8")
             self.assertNotIn("btrfs-overlayfs", result)
+
+    def test_mkinitcpio_configuration_embeds_keyfile_and_swap_hook(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "etc").mkdir()
+            (root / "crypto_keyfile.bin").write_bytes(b"key")
+            (root / "etc/mkinitcpio.conf").write_text(
+                "MODULES=(existing)\nBINARIES=()\nFILES=()\n"
+                "HOOKS=(base udev autodetect block filesystems fsck)\n",
+                encoding="utf-8",
+            )
+            context = types.SimpleNamespace(
+                root=root,
+                partitions=[
+                    {"mountPoint": "/", "fs": "btrfs", "luksMapperName": "cryptroot"},
+                    {"mountPoint": "", "fs": "linuxswap", "luksMapperName": "cryptswap", "claimed": True},
+                ],
+                root_filesystem="btrfs",
+                root_encrypted=True,
+                target_path=lambda path: root / str(path).lstrip("/"),
+            )
+            with mock.patch.object(boot_base, "target_has", return_value=False):
+                boot_base.configure_mkinitcpio(context)
+            result = (root / "etc/mkinitcpio.conf").read_text(encoding="utf-8")
+            self.assertIn("encrypt", result)
+            self.assertIn("openswap", result)
+            self.assertIn("resume", result)
+            self.assertIn("FILES=(/crypto_keyfile.bin)", result)
+            self.assertNotIn(" fsck", result)
+            self.assertIn("MODULES=(existing)", result)
 
     def test_mkinitcpio_removes_stale_managed_keyfile(self):
         with tempfile.TemporaryDirectory() as temporary:

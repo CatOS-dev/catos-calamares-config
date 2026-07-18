@@ -27,7 +27,6 @@ class ProfileTests(unittest.TestCase):
         jobs = exec_sequence(settings)
         self.assertNotIn("zfs", jobs)
         self.assertNotIn("zfshostid", jobs)
-        self.assertNotIn("luksopenswaphookcfg", jobs)
         self.assertIn("pacstrap@default", jobs)
         self.assertIn("bootloadu", jobs)
         for legacy_job in ("shellprocess@grub", "grubcfg", "bootloader", "initcpiocfg", "initcpio"):
@@ -65,7 +64,6 @@ class ProfileTests(unittest.TestCase):
         jobs = exec_sequence(settings)
         self.assertNotIn("zfs", jobs)
         self.assertNotIn("zfshostid", jobs)
-        self.assertNotIn("luksopenswaphookcfg", jobs)
         self.assertIn("bootloadu", jobs)
         for legacy_job in ("shellprocess@grub", "grubcfg", "bootloader", "initcpiocfg", "initcpio"):
             self.assertNotIn(legacy_job, jobs)
@@ -139,7 +137,6 @@ class ProfileTests(unittest.TestCase):
         self.assertNotIn("catos-keyring", config["basePackages"])
         self.assertIn("chwd", config["requiredPackages"])
         self.assertIn("fish", config["requiredPackages"])
-        self.assertNotIn("mkinitcpio-openswap", config["basePackages"])
 
         settings = load_yaml("usr/share/calamares-advanced/settings.conf")
         jobs = exec_sequence(settings)
