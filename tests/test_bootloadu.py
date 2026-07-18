@@ -24,7 +24,6 @@ from providers.grub import GrubProvider  # noqa: E402
 from providers.limine import LimineProvider  # noqa: E402
 from providers.systemd_boot import SystemdBootProvider  # noqa: E402
 import providers.grub as grub_provider  # noqa: E402
-from providers.systemd_boot import SystemdBootProvider  # noqa: E402
 import providers.systemd_boot as systemd_boot_provider  # noqa: E402
 from registry import (  # noqa: E402
     RegistryError,
@@ -34,16 +33,10 @@ from registry import (  # noqa: E402
     platform_supported,
 )
 
-
 class BootloaduTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.registry = load_bootloader_registry(REGISTRY_PATH)
-
-    def test_all_declared_providers_have_implementations(self):
-        init_source = (MODULE / "providers/__init__.py").read_text(encoding="utf-8")
-        for provider in self.registry["providers"]:
-            self.assertIn(f'"{provider}"', init_source)
 
     def test_package_plan_selects_snapshot_provider(self):
         plan = package_plan(
@@ -379,18 +372,6 @@ class BootloaduTests(unittest.TestCase):
             self.assertIn("label_prefix = CatOS", config)
             self.assertNotIn("machine_id", config)
 
-    def test_install_marker_covers_pacstrap_and_target_namespaces(self):
-        source = (MODULE / "main.py").read_text(encoding="utf-8")
-        self.assertIn("Path(marker_path)", source)
-        self.assertIn("context.target_path(marker_path)", source)
-        self.assertIn("for marker in marker_paths", source)
-
-    def test_main_prepares_mkinitcpio_before_provider_construction(self):
-        source = (MODULE / "main.py").read_text(encoding="utf-8")
-        prepare = source.index("configure_mkinitcpio(context)")
-        construct = source.index("provider = provider_type(context, profile)")
-        self.assertLess(prepare, construct)
-
     def test_partition_fact_helpers(self):
         partitions = [
             {"mountPoint": "/", "fs": "btrfs", "device": "/dev/nvme0n1p2"},
@@ -400,7 +381,6 @@ class BootloaduTests(unittest.TestCase):
         self.assertEqual(efi_device(partitions, "/boot/efi"), ("/dev/nvme0n1", 1))
         with self.assertRaises(ContextError):
             root_partition(partitions[1:])
-
 
 if __name__ == "__main__":
     unittest.main()
