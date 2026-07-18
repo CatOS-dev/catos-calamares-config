@@ -173,6 +173,7 @@ class ProfileTests(unittest.TestCase):
 
         chooser_ids = [item["id"] for item in chooser["items"] if item["id"]]
         desktop_group = next(group for group in netinstall if group["name"] == "Desktop Environments")
+        self.assertFalse(desktop_group.get("selected", True))
         visible_desktops = [
             desktop for desktop in desktop_group["subgroups"] if not desktop.get("hidden", False)
         ]
@@ -180,9 +181,14 @@ class ProfileTests(unittest.TestCase):
 
         desktops = {desktop["name"]: desktop for desktop in visible_desktops}
         for desktop in visible_desktops:
+            self.assertFalse(desktop.get("selected", True), desktop["name"])
             self.assertNotIn("packages", desktop)
             subgroups = desktop.get("subgroups", [])
             self.assertTrue(subgroups, desktop["name"])
+            self.assertFalse(
+                any(group.get("selected", False) for group in subgroups),
+                desktop["name"],
+            )
             critical_groups = [group for group in subgroups if group.get("critical", False)]
             self.assertEqual(len(critical_groups), 1, desktop["name"])
             self.assertTrue(all(group.get("packages") for group in subgroups), desktop["name"])

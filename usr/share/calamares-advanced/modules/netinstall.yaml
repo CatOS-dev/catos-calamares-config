@@ -158,7 +158,6 @@
       subgroups:
         - name: Plasma core
           description: Desktop session, login manager and core system integration
-          selected: true
           critical: true
           packages:
             - plasma-desktop
@@ -177,7 +176,6 @@
             - kinfocenter
         - name: Plasma integration
           description: File, device and desktop integration
-          selected: true
           critical: false
           packages:
             - bluedevil
@@ -190,7 +188,6 @@
             - xsettingsd
         - name: Plasma applications
           description: Common KDE applications
-          selected: true
           critical: false
           packages:
             - dolphin
@@ -208,7 +205,6 @@
             - vlc
         - name: CatOS Plasma customization
           description: CatOS settings, themes and visual customization
-          selected: true
           critical: false
           packages:
             - tela-icon-theme-git
@@ -223,7 +219,6 @@
       subgroups:
         - name: GNOME core
           description: Desktop session, login manager and core applications
-          selected: true
           critical: true
           packages:
             - gdm
@@ -237,7 +232,6 @@
             - libnma
         - name: GNOME file integration
           description: Removable media, network shares and file previews
-          selected: true
           critical: false
           packages:
             - gvfs-afc
@@ -248,7 +242,6 @@
             - sushi
         - name: GNOME applications
           description: Common GNOME applications
-          selected: true
           critical: false
           packages:
             - gnome-text-editor
@@ -262,7 +255,6 @@
             - showtime
         - name: GNOME extensions
           description: Optional shell extensions and configuration tools
-          selected: true
           critical: false
           packages:
             - gnome-tweaks
@@ -274,7 +266,6 @@
             - gnome-shell-extension-kimpanel-git
         - name: CatOS GNOME customization
           description: CatOS settings, themes and icons
-          selected: true
           critical: false
           packages:
             - gnome-themes-extra
@@ -290,7 +281,6 @@
       subgroups:
         - name: Niri core
           description: Session, login manager, XWayland bridge and DMS integration
-          selected: true
           critical: true
           packages:
             - niri
@@ -299,7 +289,6 @@
             - catos-niri-dms
         - name: Desktop services
           description: Network, Bluetooth, audio and session utilities
-          selected: true
           critical: false
           packages:
             - network-manager-applet
@@ -311,7 +300,6 @@
             - playerctl
         - name: File integration
           description: File manager, removable media and network shares
-          selected: true
           critical: false
           packages:
             - thunar
@@ -326,7 +314,6 @@
             - gvfs-smb
         - name: Wayland tools
           description: Screenshots, recording and clipboard utilities
-          selected: true
           critical: false
           packages:
             - grim
@@ -336,7 +323,6 @@
             - wf-recorder
         - name: CatOS customization
           description: CatOS themes, icons, cursor and appearance tools
-          selected: true
           critical: false
           packages:
             - catos-gtk-settings
@@ -353,7 +339,6 @@
       subgroups:
         - name: Hyprland core
           description: Session, login manager, XWayland and DMS integration
-          selected: true
           critical: true
           packages:
             - hyprland
@@ -364,7 +349,6 @@
             - catos-hyprland-dms
         - name: Desktop services
           description: Network, Bluetooth, audio and session utilities
-          selected: true
           critical: false
           packages:
             - network-manager-applet
@@ -376,7 +360,6 @@
             - playerctl
         - name: File integration
           description: File manager, removable media and network shares
-          selected: true
           critical: false
           packages:
             - thunar
@@ -391,7 +374,6 @@
             - gvfs-smb
         - name: Wayland tools
           description: Screenshots, recording and clipboard utilities
-          selected: true
           critical: false
           packages:
             - grim
@@ -401,7 +383,6 @@
             - wf-recorder
         - name: CatOS customization
           description: CatOS themes, icons, cursor and appearance tools
-          selected: true
           critical: false
           packages:
             - catos-gtk-settings
@@ -418,7 +399,6 @@
       subgroups:
         - name: DDE core
           description: Session, Treeland compositor, display manager and system integration
-          selected: true
           critical: true
           packages:
             - ddm
@@ -433,7 +413,6 @@
             - xdg-desktop-portal-dde
         - name: DDE integration
           description: File management, search and desktop services
-          selected: true
           critical: false
           packages:
             - deepin-file-manager
@@ -444,7 +423,6 @@
             - deepin-system-monitor
         - name: DDE applications
           description: Common Deepin applications
-          selected: true
           critical: false
           packages:
             - deepin-terminal
@@ -457,7 +435,6 @@
             - deepin-movie
         - name: DDE appearance
           description: Deepin themes, icons, wallpapers and sound theme
-          selected: true
           critical: false
           packages:
             - deepin-desktop-base
@@ -474,7 +451,6 @@
       subgroups:
         - name: Xfce core
           description: Desktop session, login manager and essential integration
-          selected: true
           critical: true
           packages:
             - xfce4
@@ -487,7 +463,6 @@
             - xfce4-screensaver
         - name: Xfce file integration
           description: Removable media, network shares and Thunar extensions
-          selected: true
           critical: false
           packages:
             - blueman
@@ -501,7 +476,6 @@
             - thunar-media-tags-plugin
         - name: Xfce panel plugins
           description: Useful panel plugins
-          selected: true
           critical: false
           packages:
             - xfce4-battery-plugin
@@ -514,7 +488,6 @@
             - xfce4-xkb-plugin
         - name: Xfce applications
           description: Common lightweight applications
-          selected: true
           critical: false
           packages:
             - file-roller
@@ -526,7 +499,6 @@
             - xfce4-taskmanager
         - name: CatOS Xfce customization
           description: CatOS settings, themes and login appearance
-          selected: true
           critical: false
           packages:
             - catos-gtk-settings
@@ -542,7 +514,6 @@
       subgroups:
         - name: Cinnamon core
           description: Desktop session, login manager and essential integration
-          selected: true
           critical: true
           packages:
             - cinnamon
@@ -554,7 +525,6 @@
             - xdg-desktop-portal-xapp
         - name: Cinnamon file integration
           description: Network shares, removable media and Nemo extensions
-          selected: true
           critical: false
           packages:
             - blueman
@@ -568,7 +538,6 @@
             - nemo-share
         - name: Cinnamon applications
           description: Common desktop applications
-          selected: true
           critical: false
           packages:
             - gnome-terminal
@@ -579,7 +548,6 @@
             - mpv
         - name: CatOS Cinnamon customization
           description: CatOS settings, themes and login appearance
-          selected: true
           critical: false
           packages:
             - tela-circle-icon-theme-all
@@ -595,7 +563,6 @@
       subgroups:
         - name: COSMIC core
           description: Desktop session, compositor, greeter and system integration
-          selected: true
           critical: true
           packages:
             - cosmic-session
@@ -618,7 +585,6 @@
             - xorg-xwayland
         - name: COSMIC applications
           description: Applications developed for COSMIC
-          selected: true
           critical: false
           packages:
             - cosmic-app-library
@@ -630,7 +596,6 @@
             - cosmic-monitor
         - name: COSMIC appearance
           description: COSMIC wallpapers and icon theme
-          selected: true
           critical: false
           packages:
             - cosmic-wallpapers
@@ -643,7 +608,6 @@
       subgroups:
         - name: Budgie core
           description: Desktop session, login manager and essential integration
-          selected: true
           critical: true
           packages:
             - budgie-desktop
@@ -657,7 +621,6 @@
             - gvfs
         - name: Budgie file integration
           description: Network shares, removable media and Nemo integration
-          selected: true
           critical: false
           packages:
             - blueman
@@ -671,7 +634,6 @@
             - sushi
         - name: Budgie applications
           description: Common GTK desktop applications
-          selected: true
           critical: false
           packages:
             - gnome-text-editor
@@ -683,7 +645,6 @@
             - gnome-screenshot
         - name: CatOS Budgie customization
           description: CatOS settings, themes and login appearance
-          selected: true
           critical: false
           packages:
             - tela-circle-icon-theme-all
@@ -699,7 +660,6 @@
       subgroups:
         - name: LXDE core
           description: Desktop session, window manager, panel and login manager
-          selected: true
           critical: true
           packages:
             - lxde-common
@@ -720,7 +680,6 @@
             - gvfs
         - name: LXDE integration
           description: Network shares, removable media and appearance tools
-          selected: true
           critical: false
           packages:
             - gvfs-afc
@@ -733,7 +692,6 @@
             - lxde-icon-theme
         - name: LXDE applications
           description: Common lightweight applications
-          selected: true
           critical: false
           packages:
             - lxterminal
@@ -745,7 +703,6 @@
             - mousepad
         - name: CatOS LXDE customization
           description: CatOS themes and login appearance
-          selected: true
           critical: false
           packages:
             - catos-gtk-settings
@@ -760,7 +717,6 @@
       subgroups:
         - name: LXQt core
           description: Desktop session, login manager and essential integration
-          selected: true
           critical: true
           packages:
             - lxqt
@@ -775,7 +731,6 @@
             - xsettingsd
         - name: LXQt integration
           description: File integration and hardware monitoring
-          selected: true
           critical: false
           packages:
             - gvfs-mtp
@@ -783,7 +738,6 @@
             - lm_sensors
         - name: LXQt applications
           description: Common Qt desktop applications
-          selected: true
           critical: false
           packages:
             - featherpad
@@ -792,7 +746,6 @@
             - xscreensaver
         - name: CatOS LXQt customization
           description: CatOS themes and login appearance
-          selected: true
           critical: false
           packages:
             - catos-sddm-theme
@@ -807,7 +760,6 @@
       subgroups:
         - name: MATE core
           description: Desktop session, login manager and essential integration
-          selected: true
           critical: true
           packages:
             - mate
@@ -818,7 +770,6 @@
             - gvfs
         - name: MATE file integration
           description: Network shares, removable media and Bluetooth
-          selected: true
           critical: false
           packages:
             - blueman
@@ -829,14 +780,12 @@
             - gvfs-smb
         - name: MATE applications
           description: The standard MATE application collection
-          selected: true
           critical: false
           packages:
             - mate-extra
             - celluloid
         - name: CatOS MATE customization
           description: CatOS settings, themes and login appearance
-          selected: true
           critical: false
           packages:
             - catos-lightdm-slick-theme
@@ -852,7 +801,6 @@
       subgroups:
         - name: Sway core
           description: Compositor, login manager and CatOS session preset
-          selected: true
           critical: true
           packages:
             - sway
@@ -861,7 +809,6 @@
             - catos-sway-settings
         - name: Desktop services
           description: Network, Bluetooth, audio and hardware controls
-          selected: true
           critical: false
           packages:
             - network-manager-applet
@@ -873,7 +820,6 @@
             - playerctl
         - name: File integration
           description: File manager, removable media and network shares
-          selected: true
           critical: false
           packages:
             - thunar
@@ -888,7 +834,6 @@
             - gvfs-smb
         - name: Wayland tools
           description: Output, screenshot and clipboard utilities
-          selected: true
           critical: false
           packages:
             - wdisplays
@@ -898,7 +843,6 @@
             - wl-clipboard
         - name: CatOS customization
           description: CatOS GTK theme, icons, cursor and appearance tool
-          selected: true
           critical: false
           packages:
             - catos-gtk-settings
@@ -914,7 +858,6 @@
       subgroups:
         - name: Labwc core
           description: Compositor, login manager and CatOS session preset
-          selected: true
           critical: true
           packages:
             - labwc
@@ -923,7 +866,6 @@
             - catos-labwc-settings
         - name: Desktop services
           description: Network, Bluetooth, audio and hardware controls
-          selected: true
           critical: false
           packages:
             - network-manager-applet
@@ -935,7 +877,6 @@
             - playerctl
         - name: File integration
           description: File manager, removable media and network shares
-          selected: true
           critical: false
           packages:
             - thunar
@@ -950,7 +891,6 @@
             - gvfs-smb
         - name: Wayland tools
           description: Output, screenshot and clipboard utilities
-          selected: true
           critical: false
           packages:
             - wdisplays
@@ -960,7 +900,6 @@
             - wl-clipboard
         - name: CatOS customization
           description: CatOS GTK theme, icons, cursor and appearance tool
-          selected: true
           critical: false
           packages:
             - catos-gtk-settings
@@ -976,7 +915,6 @@
       subgroups:
         - name: Wayfire core
           description: Compositor, shell, login manager and CatOS session preset
-          selected: true
           critical: true
           packages:
             - wayfire
@@ -987,7 +925,6 @@
             - catos-wayfire-settings
         - name: Desktop services
           description: Network, Bluetooth, audio and hardware controls
-          selected: true
           critical: false
           packages:
             - network-manager-applet
@@ -999,7 +936,6 @@
             - playerctl
         - name: File integration
           description: File manager, removable media and network shares
-          selected: true
           critical: false
           packages:
             - thunar
@@ -1014,7 +950,6 @@
             - gvfs-smb
         - name: Wayland tools
           description: Screenshot, clipboard and recording utilities
-          selected: true
           critical: false
           packages:
             - grim
@@ -1024,7 +959,6 @@
             - wf-recorder
         - name: CatOS customization
           description: CatOS GTK theme, icons, cursor and appearance tool
-          selected: true
           critical: false
           packages:
             - catos-gtk-settings
@@ -1040,7 +974,6 @@
       subgroups:
         - name: UKUI core
           description: Desktop group, login manager and essential integration
-          selected: true
           critical: true
           packages:
             - ukui
@@ -1052,7 +985,6 @@
             - xdg-user-dirs-gtk
         - name: UKUI file integration
           description: Thunar-based file management integration
-          selected: true
           critical: false
           packages:
             - thunar
@@ -1060,7 +992,6 @@
             - thunar-volman
         - name: UKUI applications
           description: Common desktop applications
-          selected: true
           critical: false
           packages:
             - mate-terminal
@@ -1070,7 +1001,6 @@
             - gnome-screenshot
         - name: CatOS UKUI customization
           description: CatOS login theme and icon theme
-          selected: true
           critical: false
           packages:
             - catos-sddm-theme
