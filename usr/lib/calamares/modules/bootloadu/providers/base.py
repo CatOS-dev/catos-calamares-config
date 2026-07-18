@@ -13,6 +13,13 @@ class BootloaduError(RuntimeError):
     pass
 
 
+SNAPSHOT_OVERLAY_HOOKS = {
+    "grub": "grub-btrfs-overlayfs",
+    "limine": "limine-btrfs-overlayfs",
+    "systemd-boot": "sdboot-btrfs-overlayfs",
+}
+
+
 def run_target(arguments: list[str], description: str) -> None:
     libcalamares.utils.debug(f"bootloadu: {description}: {shlex.join(arguments)}")
     result = libcalamares.utils.target_env_call(arguments)
@@ -211,6 +218,14 @@ def configure_mkinitcpio(context) -> None:
     hooks.append("filesystems")
     if not uses_btrfs:
         hooks.append("fsck")
+
+    if getattr(context, "snapshots_enabled", False):
+        overlay_hook = SNAPSHOT_OVERLAY_HOOKS.get(getattr(context, "provider_id", ""))
+        if overlay_hook is None:
+            raise BootloaduError(
+                f"snapshot overlay hook is undefined for provider {getattr(context, 'provider_id', '') or 'unknown'}"
+            )
+        hooks.append(overlay_hook)
 
     arrays["HOOKS"] = list(dict.fromkeys(hooks))
     arrays["MODULES"] = list(dict.fromkeys(arrays["MODULES"]))

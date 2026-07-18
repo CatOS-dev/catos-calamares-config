@@ -231,6 +231,50 @@ class BootloaduTests(unittest.TestCase):
             self.assertLess(hooks.index("sd-vconsole"), hooks.index("block"))
             self.assertNotIn("usr", hooks)
 
+    def test_snapshot_provider_appends_matching_overlayfs_hook(self):
+        expected = {
+            "grub": "grub-btrfs-overlayfs",
+            "limine": "limine-btrfs-overlayfs",
+            "systemd-boot": "sdboot-btrfs-overlayfs",
+        }
+        for provider_id, overlay_hook in expected.items():
+            with self.subTest(provider=provider_id), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / "etc").mkdir()
+                (root / "etc/mkinitcpio.conf").write_text(
+                    "HOOKS=(base udev block filesystems fsck)\n", encoding="utf-8"
+                )
+                context = types.SimpleNamespace(
+                    provider_id=provider_id,
+                    snapshots_enabled=True,
+                    partitions=[{"mountPoint": "/", "fs": "btrfs"}],
+                    target_path=lambda path: root / str(path).lstrip("/"),
+                )
+                with mock.patch.object(boot_base, "target_has", return_value=False):
+                    boot_base.configure_mkinitcpio(context)
+                result = (root / "etc/mkinitcpio.conf").read_text(encoding="utf-8")
+                hooks = result.split("HOOKS=(", 1)[1].split(")", 1)[0].split()
+                self.assertEqual(hooks[-1], overlay_hook)
+                self.assertEqual(hooks.count(overlay_hook), 1)
+
+    def test_mkinitcpio_omits_overlayfs_hook_without_snapshots(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "etc").mkdir()
+            (root / "etc/mkinitcpio.conf").write_text(
+                "HOOKS=(base udev block filesystems fsck)\n", encoding="utf-8"
+            )
+            context = types.SimpleNamespace(
+                provider_id="limine",
+                snapshots_enabled=False,
+                partitions=[{"mountPoint": "/", "fs": "btrfs"}],
+                target_path=lambda path: root / str(path).lstrip("/"),
+            )
+            with mock.patch.object(boot_base, "target_has", return_value=False):
+                boot_base.configure_mkinitcpio(context)
+            result = (root / "etc/mkinitcpio.conf").read_text(encoding="utf-8")
+            self.assertNotIn("btrfs-overlayfs", result)
+
     def test_mkinitcpio_removes_stale_managed_keyfile(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
