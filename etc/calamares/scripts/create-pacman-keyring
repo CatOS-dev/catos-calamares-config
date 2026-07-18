@@ -1,17 +1,45 @@
 #!/usr/bin/env bash
-# Redirect standard error to standard output since calamares doesn't
-# capture stderr
+# Redirect standard error to standard output since Calamares does not capture it.
 exec 2>&1
 
-pacman-key --init
+set -u
 
-# Update cachyos-keyring first since archlinux-keyring is taken from cachyos
-# repo. Also try to make multiple attempts in case of failures due to unsynced
-# mirrors.
-pacman-key --recv-keys 3A9917BF0DED5C13F69AC68FABEC0A1208037BE9
-pacman-key --lsign-key 3A9917BF0DED5C13F69AC68FABEC0A1208037BE9
-pacman-key --recv-keys 7931B6D628C8D3BA
-pacman-key --lsign-key 7931B6D628C8D3BA
-for ((i=0; i<5; i++)); do pacman -Sy --noconfirm --needed archlinux-keyring && break; done
-for ((i=0; i<5; i++)); do pacman -Sy --noconfirm --needed archlinuxcn-keyring && break; done
-pacman-key --populate
+KEYSERVER="hkps://keyserver.ubuntu.com"
+CATOS_KEY="47BCD014C8A99B55AADAEE58F57BDFADBFCF8A1E"
+ARCH4EDU_BOOTSTRAP_KEY="CCED9BE21E1173C61DC1C9407931B6D628C8D3BA"
+
+receive_and_lsign() {
+    local fingerprint="$1"
+    local attempt
+
+    for attempt in 1 2 3; do
+        if pacman-key --keyserver "$KEYSERVER" --recv-keys "$fingerprint" \
+            && pacman-key --lsign-key "$fingerprint"; then
+            return 0
+        fi
+        sleep 2
+    done
+
+    echo "Failed to bootstrap package signing key: $fingerprint"
+    return 1
+}
+
+pacman-key --init || exit 1
+
+# CatOS packages are verified with the release key fetched independently from
+# the package repository. The target intentionally does not install catos-keyring.
+receive_and_lsign "$CATOS_KEY" || exit 1
+
+# Trust the Arch4Edu repository signing key before refreshing databases.
+receive_and_lsign "$ARCH4EDU_BOOTSTRAP_KEY" || exit 1
+
+for ((i=0; i<5; i++)); do
+    pacman -Sy --noconfirm --needed archlinux-keyring && break
+    sleep 2
+done
+for ((i=0; i<5; i++)); do
+    pacman -Sy --noconfirm --needed archlinuxcn-keyring && break
+    sleep 2
+done
+
+pacman-key --populate || exit 1

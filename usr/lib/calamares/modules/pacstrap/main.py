@@ -242,7 +242,8 @@ def run():
         libcalamares.job.setprogress(1.0)
         return None
 
-    # --- run pacstrap (host) ---
+    # Keep pacstrap's default keyring-copy behavior. shellprocess@init has
+    # already fetched and locally trusted the CatOS and Arch4Edu signing keys.
     pacstrap_command = ["pacstrap", root_mount_point] + base_packages
     try:
         run_in_host(pacstrap_command, line_cb)

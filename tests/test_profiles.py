@@ -113,6 +113,25 @@ class ProfileTests(unittest.TestCase):
         pacstrap_schema = load_yaml("usr/lib/calamares/modules/pacstrap/pacstrap.schema.yaml")
         self.assertIn("sync_db", pacstrap_schema["properties"])
 
+    def test_advanced_pacstrap_bootstraps_keys_before_install(self):
+        config = load_yaml("usr/share/calamares-advanced/modules/pacstrap.conf")
+        self.assertNotIn("catos-keyring", config["basePackages"])
+
+        settings = load_yaml("usr/share/calamares-advanced/settings.conf")
+        jobs = exec_sequence(settings)
+        self.assertLess(jobs.index("shellprocess@init"), jobs.index("pacstrap@default"))
+        self.assertLess(jobs.index("pacstrap@default"), jobs.index("shellprocess@before"))
+
+        script = (ROOT / "etc/calamares/scripts/create-pacman-keyring").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("47BCD014C8A99B55AADAEE58F57BDFADBFCF8A1E", script)
+        self.assertIn("hkps://keyserver.ubuntu.com", script)
+        self.assertIn("CCED9BE21E1173C61DC1C9407931B6D628C8D3BA", script)
+        self.assertIn("ARCH4EDU_BOOTSTRAP_KEY", script)
+        self.assertNotIn("ARCHLINUXCN_BOOTSTRAP_KEY", script)
+        self.assertNotIn("3A9917BF0DED5C13F69AC68FABEC0A1208037BE9", script)
+
     def test_desktop_profiles_match_the_chooser(self):
         chooser = load_yaml("usr/share/calamares-advanced/modules/packagechooser_desktop.conf")
         netinstall = load_yaml("usr/share/calamares-advanced/modules/netinstall.yaml")
