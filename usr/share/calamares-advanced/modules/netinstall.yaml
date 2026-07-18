@@ -282,6 +282,134 @@
             - catos-gnome-settings
             - catos-gtk-settings
             - catos-graphite-gtk-theme
+    - name: Niri-dms
+      description: Niri scrolling Wayland compositor with Dank Material Shell
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: Niri core
+          description: Session, login manager, XWayland bridge and DMS integration
+          selected: true
+          critical: true
+          packages:
+            - niri
+            - ly
+            - xwayland-satellite
+            - catos-niri-dms
+        - name: Desktop services
+          description: Network, Bluetooth, audio and session utilities
+          selected: true
+          critical: false
+          packages:
+            - network-manager-applet
+            - blueman
+            - pipewire-pulse
+            - wireplumber
+            - pavucontrol
+            - brightnessctl
+            - playerctl
+        - name: File integration
+          description: File manager, removable media and network shares
+          selected: true
+          critical: false
+          packages:
+            - thunar
+            - thunar-archive-plugin
+            - thunar-volman
+            - tumbler
+            - gvfs
+            - gvfs-afc
+            - gvfs-gphoto2
+            - gvfs-mtp
+            - gvfs-nfs
+            - gvfs-smb
+        - name: Wayland tools
+          description: Screenshots, recording and clipboard utilities
+          selected: true
+          critical: false
+          packages:
+            - grim
+            - slurp
+            - swappy
+            - wl-clipboard
+            - wf-recorder
+        - name: CatOS customization
+          description: CatOS themes, icons, cursor and appearance tools
+          selected: true
+          critical: false
+          packages:
+            - catos-gtk-settings
+            - catos-graphite-gtk-theme
+            - catos-tela-icon-theme-blue
+            - catos-bibata-cursor
+            - nwg-look
+            - qt6ct
+    - name: Hyprland-dms
+      description: Hyprland dynamic tiling Wayland compositor with Dank Material Shell
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: Hyprland core
+          description: Session, login manager, XWayland and DMS integration
+          selected: true
+          critical: true
+          packages:
+            - hyprland
+            - ly
+            - xorg-xwayland
+            - hyprlock
+            - hyprpicker
+            - catos-hyprland-dms
+        - name: Desktop services
+          description: Network, Bluetooth, audio and session utilities
+          selected: true
+          critical: false
+          packages:
+            - network-manager-applet
+            - blueman
+            - pipewire-pulse
+            - wireplumber
+            - pavucontrol
+            - brightnessctl
+            - playerctl
+        - name: File integration
+          description: File manager, removable media and network shares
+          selected: true
+          critical: false
+          packages:
+            - thunar
+            - thunar-archive-plugin
+            - thunar-volman
+            - tumbler
+            - gvfs
+            - gvfs-afc
+            - gvfs-gphoto2
+            - gvfs-mtp
+            - gvfs-nfs
+            - gvfs-smb
+        - name: Wayland tools
+          description: Screenshots, recording and clipboard utilities
+          selected: true
+          critical: false
+          packages:
+            - grim
+            - slurp
+            - swappy
+            - wl-clipboard
+            - wf-recorder
+        - name: CatOS customization
+          description: CatOS themes, icons, cursor and appearance tools
+          selected: true
+          critical: false
+          packages:
+            - catos-gtk-settings
+            - catos-graphite-gtk-theme
+            - catos-tela-icon-theme-blue
+            - catos-bibata-cursor
+            - nwg-look
+            - qt6ct
     - name: Deepin-Desktop
       description: Deepin Desktop Environment
       hidden: false

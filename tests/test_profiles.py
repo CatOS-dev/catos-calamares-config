@@ -256,8 +256,8 @@ class ProfileTests(unittest.TestCase):
         ukui = next(desktop for desktop in desktop_group["subgroups"] if desktop["name"] == "UKUI")
 
         self.assertEqual(chooser_ids, visible_desktop_names)
-        self.assertNotIn("Niri-dms", chooser_ids)
-        self.assertNotIn("Hyprland-dms", chooser_ids)
+        self.assertIn("Niri-dms", chooser_ids)
+        self.assertIn("Hyprland-dms", chooser_ids)
         self.assertNotIn("UKUI", chooser_ids)
         for desktop_id in ("Deepin-Desktop", "Sway", "Labwc", "Wayfire"):
             self.assertIn(desktop_id, chooser_ids)
@@ -275,6 +275,8 @@ class ProfileTests(unittest.TestCase):
             self.assertTrue(all(group.get("packages") for group in desktop["subgroups"]))
 
         expected_function_groups = {
+            "Niri-dms": {"Niri core", "Desktop services", "File integration", "Wayland tools", "CatOS customization"},
+            "Hyprland-dms": {"Hyprland core", "Desktop services", "File integration", "Wayland tools", "CatOS customization"},
             "Sway": {"Sway core", "Desktop services", "File integration", "Wayland tools", "CatOS customization"},
             "Labwc": {"Labwc core", "Desktop services", "File integration", "Wayland tools", "CatOS customization"},
             "Wayfire": {"Wayfire core", "Desktop services", "File integration", "Wayland tools", "CatOS customization"},
@@ -286,6 +288,14 @@ class ProfileTests(unittest.TestCase):
                 {subgroup["name"] for subgroup in desktops[desktop_name]["subgroups"]},
                 subgroup_names,
             )
+
+        required_core_packages = {
+            "Niri-dms": {"niri", "ly", "xwayland-satellite", "catos-niri-dms"},
+            "Hyprland-dms": {"hyprland", "ly", "hyprlock", "hyprpicker", "catos-hyprland-dms"},
+        }
+        for desktop_name, packages in required_core_packages.items():
+            core = next(group for group in desktops[desktop_name]["subgroups"] if group["critical"])
+            self.assertTrue(packages.issubset(core["packages"]))
 
     def test_desktop_package_cleanup(self):
         chooser = load_yaml("usr/share/calamares-advanced/modules/packagechooser_desktop.conf")
