@@ -210,7 +210,7 @@
             - tela-icon-theme-git
             - catos-kde-settings
             - catos-kde-theme
-            - kwin-decoration-sierra-breeze-enhanced-for-catos
+            - catos-kwin-decoration
     - name: GNOME-Desktop
       description: GNOME desktop
       hidden: false
@@ -225,6 +225,8 @@
             - gnome-shell
             - gnome-control-center
             - gnome-keyring
+            - gnome-remote-desktop
+            - malcontent
             - nautilus
             - xdg-desktop-portal-gnome
             - xdg-user-dirs-gtk
@@ -235,16 +237,32 @@
           critical: false
           packages:
             - gvfs-afc
+            - gvfs-dnssd
+            - gvfs-goa
             - gvfs-gphoto2
             - gvfs-mtp
             - gvfs-nfs
+            - gvfs-onedrive
             - gvfs-smb
+            - gvfs-wsdd
+            - gnome-user-share
+            - grilo-plugins
+            - gst-thumbnailers
+            - rygel
             - sushi
         - name: GNOME applications
           description: Common GNOME applications
           critical: false
           packages:
+            - baobab
+            - gnome-calendar
+            - gnome-characters
+            - gnome-clocks
+            - gnome-font-viewer
+            - gnome-logs
+            - gnome-software
             - gnome-text-editor
+            - gnome-weather
             - ptyxis
             - loupe
             - papers
@@ -253,11 +271,14 @@
             - gnome-disk-utility
             - gnome-system-monitor
             - showtime
+            - simple-scan
+            - snapshot
         - name: GNOME extensions
           description: Optional shell extensions and configuration tools
           critical: false
           packages:
             - gnome-tweaks
+            - gnome-shell-extensions
             - gnome-shell-extension-vitals
             - gnome-shell-extension-caffeine
             - gnome-shell-extension-appindicator
@@ -327,7 +348,7 @@
           packages:
             - catos-gtk-settings
             - catos-graphite-gtk-theme
-            - catos-tela-icon-theme-blue
+            - tela-icon-theme-git
             - catos-bibata-cursor
             - nwg-look
             - qt6ct
@@ -387,7 +408,7 @@
           packages:
             - catos-gtk-settings
             - catos-graphite-gtk-theme
-            - catos-tela-icon-theme-blue
+            - tela-icon-theme-git
             - catos-bibata-cursor
             - nwg-look
             - qt6ct
@@ -847,7 +868,7 @@
           packages:
             - catos-gtk-settings
             - catos-graphite-gtk-theme
-            - catos-tela-icon-theme-blue
+            - tela-icon-theme-git
             - catos-bibata-cursor
             - nwg-look
     - name: Labwc
@@ -904,7 +925,7 @@
           packages:
             - catos-gtk-settings
             - catos-graphite-gtk-theme
-            - catos-tela-icon-theme-blue
+            - tela-icon-theme-git
             - catos-bibata-cursor
             - nwg-look
     - name: Wayfire
@@ -963,7 +984,7 @@
           packages:
             - catos-gtk-settings
             - catos-graphite-gtk-theme
-            - catos-tela-icon-theme-blue
+            - tela-icon-theme-git
             - catos-bibata-cursor
             - nwg-look
     - name: UKUI

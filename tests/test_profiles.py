@@ -202,6 +202,61 @@ class ProfileTests(unittest.TestCase):
             core = next(group for group in desktops[desktop_name]["subgroups"] if group.get("critical", False))
             self.assertTrue(packages.issubset(core["packages"]))
 
+        gnome_packages = {
+            package
+            for group in desktops["GNOME-Desktop"]["subgroups"]
+            for package in group["packages"]
+        }
+        required_gnome_packages = {
+            "baobab",
+            "gnome-calendar",
+            "gnome-characters",
+            "gnome-clocks",
+            "gnome-font-viewer",
+            "gnome-logs",
+            "gnome-remote-desktop",
+            "gnome-shell-extensions",
+            "gnome-software",
+            "gnome-user-share",
+            "gnome-weather",
+            "grilo-plugins",
+            "gst-thumbnailers",
+            "gvfs-dnssd",
+            "gvfs-goa",
+            "gvfs-onedrive",
+            "gvfs-wsdd",
+            "malcontent",
+            "rygel",
+            "simple-scan",
+            "snapshot",
+        }
+        self.assertTrue(
+            required_gnome_packages.issubset(gnome_packages),
+            sorted(required_gnome_packages - gnome_packages),
+        )
+        self.assertIn("ptyxis", gnome_packages)
+        self.assertNotIn("gnome-console", gnome_packages)
+
+        all_desktop_packages = {
+            desktop_name: {
+                package
+                for group in desktop["subgroups"]
+                for package in group["packages"]
+            }
+            for desktop_name, desktop in desktops.items()
+        }
+        for desktop_name, packages in all_desktop_packages.items():
+            self.assertNotIn("catos-tela-icon-theme-blue", packages, desktop_name)
+
+        for desktop_name in ("Niri-dms", "Hyprland-dms", "Sway", "Labwc", "Wayfire"):
+            self.assertIn("tela-icon-theme-git", all_desktop_packages[desktop_name])
+
+        self.assertIn("catos-kwin-decoration", all_desktop_packages["KDE-Desktop"])
+        self.assertNotIn(
+            "kwin-decoration-sierra-breeze-enhanced-for-catos",
+            all_desktop_packages["KDE-Desktop"],
+        )
+
     def test_desktop_chooser_assets_exist(self):
         chooser = load_yaml("usr/share/calamares-advanced/modules/packagechooser_desktop.conf")
 
