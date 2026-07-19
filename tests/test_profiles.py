@@ -167,6 +167,27 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("trap cleanup_keyring_daemons EXIT", script)
         self.assertIn("gpgconf --homedir", script)
 
+    def test_netinstall_sources_use_online_mirrors_with_local_fallback(self):
+        configs = {
+            "netinstall.conf": "netinstall.yaml",
+            "software@netinstall.conf": "software@netinstall.yaml",
+            "paru_extra@netinstall.conf": "paru_extra@netinstall.yaml",
+        }
+
+        for config_name, groups_name in configs.items():
+            config = load_yaml(
+                f"usr/share/calamares-advanced/modules/{config_name}"
+            )
+            self.assertEqual(
+                config["groupsUrl"],
+                [
+                    f"https://repo.aromatic05.top/x86_64/netinstall/{groups_name}",
+                    f"https://pkgs.catos.info/x86_64/netinstall/{groups_name}",
+                    f"file:///usr/share/calamares-advanced/modules/{groups_name}",
+                ],
+                config_name,
+            )
+
     def test_desktop_profiles_match_the_chooser(self):
         chooser = load_yaml("usr/share/calamares-advanced/modules/packagechooser_desktop.conf")
         netinstall = load_yaml("usr/share/calamares-advanced/modules/netinstall.yaml")
