@@ -6,10 +6,10 @@ set -e -u
 
 ## /etc/issue
 rm /usr/share/pixmaps/archlinux-logo.png
-ln -s /usr/share/pixmaps/logo.png /usr/share/pixmaps/archlinux-logo.png
+ln -s /usr/share/pixmaps/catos-logo.png /usr/share/pixmaps/archlinux-logo.png
 
 rm /usr/share/pixmaps/archlinux-logo.svg
-ln -s /usr/share/pixmaps/logo.svg /usr/share/pixmaps/archlinux-logo.svg
+ln -s /usr/share/pixmaps/catos-logo.svg /usr/share/pixmaps/archlinux-logo.svg
 
 rm /usr/share/pixmaps/archlinux-logo-text.svg
 ln -s /usr/share/pixmaps/logo-text.svg /usr/share/pixmaps/archlinux-logo-text.svg
