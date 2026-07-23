@@ -42,12 +42,29 @@ def platform_supported(profile: dict[str, Any], firmware: str, architecture: str
     return False
 
 
+def secure_boot_profile(registry: dict[str, Any], provider_id: str) -> dict[str, Any]:
+    secure_boot = registry.get("secureBoot")
+    if not isinstance(secure_boot, dict):
+        raise RegistryError("Secure Boot configuration is missing from the bootloader registry")
+    package = secure_boot.get("package")
+    supported = secure_boot.get("supportedProviders")
+    if not isinstance(package, str) or not package:
+        raise RegistryError("Secure Boot package is missing from the bootloader registry")
+    if not isinstance(supported, list) or not all(isinstance(item, str) and item for item in supported):
+        raise RegistryError("Secure Boot provider list is invalid")
+    if provider_id not in supported:
+        raise RegistryError(f"{provider_id} does not support automatic Secure Boot setup")
+    return secure_boot
+
+
 def package_plan(
     registry: dict[str, Any],
     provider_id: str,
     *,
     snapshots_enabled: bool,
     root_filesystem: str,
+    firmware: str = "bios",
+    secure_boot_enabled: bool = False,
 ) -> list[str]:
     profile = provider_profile(registry, provider_id)
     packages = list(profile.get("packages", [])) + list(profile.get("kernelPackages", []))
@@ -62,6 +79,11 @@ def package_plan(
             )
         packages += list(registry.get("snapshotCommonPackages", []))
         packages += list(snapshots.get("packages", []))
+    if secure_boot_enabled:
+        if firmware != "efi":
+            raise RegistryError("Secure Boot requires EFI firmware")
+        secure_boot = secure_boot_profile(registry, provider_id)
+        packages.append(secure_boot["package"])
     return list(dict.fromkeys(packages))
 
 

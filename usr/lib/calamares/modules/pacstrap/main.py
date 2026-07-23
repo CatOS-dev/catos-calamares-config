@@ -21,6 +21,7 @@ from pacstrap_repository import (  # noqa: E402
     pacman_config_for,
     transform_packages,
 )
+from secureboot import secure_boot_enabled as host_secure_boot_enabled  # noqa: E402
 from registry import (  # noqa: E402
     RegistryError,
     load_bootloader_registry,
@@ -222,6 +223,9 @@ def run():
         "",
     )
     snapshots_enabled = bool(libcalamares.globalstorage.value("snapshots.enabled"))
+    firmware = str(libcalamares.globalstorage.value("firmwareType") or "bios")
+    secure_boot_active = firmware == "efi" and host_secure_boot_enabled()
+    libcalamares.globalstorage.insert("secureboot.enabled", secure_boot_active)
     try:
         registry = load_bootloader_registry()
         boot_packages = package_plan(
@@ -229,6 +233,8 @@ def run():
                 str(bootloader),
                 snapshots_enabled=snapshots_enabled,
                 root_filesystem=root_filesystem,
+                firmware=firmware,
+                secure_boot_enabled=secure_boot_active,
             )
         boot_packages = transform_packages(boot_packages, repository_selection)
         base_packages.extend(boot_packages)

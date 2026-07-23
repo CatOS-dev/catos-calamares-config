@@ -39,7 +39,8 @@ class ProfileTests(unittest.TestCase):
         self.assertLess(jobs.index("paru@default"), jobs.index("bootloadu"))
         self.assertLess(jobs.index("bootloadu"), jobs.index("services-systemd"))
         self.assertLess(jobs.index("services-systemd"), jobs.index("shellprocess@final"))
-        self.assertLess(jobs.index("shellprocess@final"), jobs.index("preservefiles"))
+        self.assertLess(jobs.index("shellprocess@final"), jobs.index("bootloadu@secureboot"))
+        self.assertLess(jobs.index("bootloadu@secureboot"), jobs.index("preservefiles"))
         self.assertLess(jobs.index("preservefiles"), jobs.index("umount"))
 
     def test_gpg_daemons_are_stopped_before_umount(self):
@@ -69,6 +70,8 @@ class ProfileTests(unittest.TestCase):
             self.assertNotIn(legacy_job, jobs)
         self.assertLess(jobs.index("packages"), jobs.index("bootloadu"))
         self.assertLess(jobs.index("bootloadu"), jobs.index("services-systemd"))
+        self.assertLess(jobs.index("shellprocess@final"), jobs.index("bootloadu@secureboot"))
+        self.assertLess(jobs.index("bootloadu@secureboot"), jobs.index("preservefiles"))
         self.assertLess(jobs.index("preservefiles"), jobs.index("umount"))
 
     def test_install_state_is_private(self):

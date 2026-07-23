@@ -4,6 +4,12 @@ defaultProvider: grub
 snapshotCommonPackages:
   - snapper
   - catos-snapper-config
+secureBoot:
+  package: catos-secureboot
+  supportedProviders:
+    - grub
+    - limine
+    - systemd-boot
 providers:
   grub:
     displayName: GRUB

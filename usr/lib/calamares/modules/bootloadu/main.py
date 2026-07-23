@@ -15,6 +15,7 @@ from context import BootContext, ContextError  # noqa: E402
 from providers import PROVIDERS  # noqa: E402
 from providers.base import BootloaduError, configure_mkinitcpio  # noqa: E402
 from registry import RegistryError, install_marker, load_bootloader_registry, platform_supported, provider_profile  # noqa: E402
+from secureboot import enable_target_secure_boot, prepare_secure_boot  # noqa: E402
 
 _ = gettext.translation(
     "calamares-python",
@@ -37,6 +38,15 @@ def run():
             libcalamares.job.configuration,
             registry.get("defaultProvider", "grub"),
         )
+        phase = libcalamares.job.configuration.get("phase", "install")
+        if phase == "secureboot":
+            enable_target_secure_boot(libcalamares.globalstorage, registry, context)
+            libcalamares.job.setprogress(1.0)
+            return None
+        if phase != "install":
+            raise BootloaduError(f"unknown bootloadu phase: {phase}")
+
+        prepare_secure_boot(libcalamares.globalstorage, registry, context)
         profile = provider_profile(registry, context.provider_id)
         if not platform_supported(profile, context.firmware, context.architecture):
             raise BootloaduError(
