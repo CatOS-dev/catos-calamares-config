@@ -10,6 +10,7 @@ secureBoot:
     - grub
     - limine
     - systemd-boot
+    - uki
 providers:
   grub:
     displayName: GRUB

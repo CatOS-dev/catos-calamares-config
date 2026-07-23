@@ -54,9 +54,9 @@ class SecureBootTests(unittest.TestCase):
             self.assertFalse(secure_boot_enabled(root))
 
 
-    def test_prepare_secure_boot_records_state_and_rejects_unsupported_provider(self):
+    def test_prepare_secure_boot_supports_uki_and_rejects_efistub(self):
         storage = Storage()
-        supported = types.SimpleNamespace(provider_id="grub", firmware="efi")
+        supported = types.SimpleNamespace(provider_id="uki", firmware="efi")
         unsupported = types.SimpleNamespace(provider_id="efistub", firmware="efi")
         with mock.patch.object(secureboot_module, "secure_boot_enabled", return_value=True):
             self.assertTrue(prepare_secure_boot(storage, self.registry, supported))
@@ -84,7 +84,16 @@ class SecureBootTests(unittest.TestCase):
         self.assertNotIn("catos-secureboot", disabled)
         self.assertIn("catos-secureboot", enabled)
 
-    def test_secure_boot_rejects_direct_firmware_provider(self):
+    def test_secure_boot_supports_direct_uki_but_rejects_efistub(self):
+        enabled = package_plan(
+            self.registry,
+            "uki",
+            snapshots_enabled=False,
+            root_filesystem="ext4",
+            firmware="efi",
+            secure_boot_enabled=True,
+        )
+        self.assertIn("catos-secureboot", enabled)
         with self.assertRaises(RegistryError):
             package_plan(
                 self.registry,

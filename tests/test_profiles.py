@@ -112,6 +112,16 @@ class ProfileTests(unittest.TestCase):
         ):
             self.assertTrue((module / relative).is_file(), relative)
 
+    def test_bootloader_chooser_uses_global_storage_visibility_expressions(self):
+        chooser = load_yaml("usr/share/calamares-advanced/modules/packagechooser_bootloader.conf")
+        items = {item["id"]: item for item in chooser["items"]}
+
+        self.assertNotIn("visibleWhen", items["grub"])
+        for provider in ("limine", "systemd-boot", "uki", "efistub"):
+            self.assertIn("firmwareType == 'efi'", items[provider].get("visibleWhen", []), provider)
+        self.assertIn("secureboot.enabled != true", items["efistub"]["visibleWhen"])
+        self.assertNotIn("secureboot.enabled != true", items["uki"]["visibleWhen"])
+
     def test_branding_and_schema_ids(self):
         bootloader = load_yaml("etc/calamares/modules/bootloader.conf")
         self.assertEqual(bootloader["bootloaderEntryName"], "CatOS")
