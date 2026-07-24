@@ -27,26 +27,26 @@
           - ibus-rime
           - ibus-sunpinyin
 - name: "Shell"
-  description: "选择你喜欢的 Shell, 默认是 Fish Shell"
+  description: "安装你需要的 Shell 配置，默认安装 Fish Shell 配置"
   hidden: false
   expanded: true
   critical: true
   subgroups:
       - name: "Fish Shell"
-        description: "Fish Shell"
+        description: "Fish Shell 与 CatOS 默认配置"
         selected: true
         packages:
-          - fish
           - catos-fish-config
-      - name: "Zsh Shell"
-        description: "Zsh Shell"
+      - name: "Bash Shell"
+        description: "Bash Shell 与 CatOS 默认配置"
         selected: false
         packages:
-          - zsh
-          - zsh-completions
-          - zsh-autosuggestions
-          - zsh-syntax-highlighting
-          - zsh-theme-powerlevel10k-git
+          - catos-bash-config
+      - name: "Zsh Shell"
+        description: "Zsh Shell 与 CatOS 默认配置"
+        selected: false
+        packages:
+          - catos-zsh-config
 - name: "Terminal Emulators"
   description: "其他终端模拟器"
   hidden: false
