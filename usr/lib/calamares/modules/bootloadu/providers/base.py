@@ -77,6 +77,31 @@ def write_text(path: Path, content: str, mode: int = 0o644) -> None:
     os.replace(temporary, path)
 
 
+def register_snapper_config(path: Path, name: str) -> None:
+    content = path.read_text(encoding="utf-8") if path.is_file() else ""
+    lines = content.splitlines()
+    found = False
+    for index, line in enumerate(lines):
+        match = re.match(r"\s*SNAPPER_CONFIGS\s*=\s*(.*)$", line)
+        if not match:
+            continue
+        try:
+            values = shlex.split(match.group(1), comments=True, posix=True)
+        except ValueError as error:
+            raise BootloaduError(f"cannot parse SNAPPER_CONFIGS in {path}: {error}") from error
+        configs = [config for value in values for config in value.split()]
+        if any(not re.fullmatch(r"[A-Za-z0-9_.-]+", config) for config in configs):
+            raise BootloaduError(f"invalid Snapper configuration name in {path}")
+        if name not in configs:
+            configs.append(name)
+        lines[index] = 'SNAPPER_CONFIGS="' + " ".join(configs) + '"'
+        found = True
+        break
+    if not found:
+        lines.append(f'SNAPPER_CONFIGS="{name}"')
+    write_text(path, "\n".join(lines) + "\n")
+
+
 def _mkinitcpio_arrays(path: Path) -> dict[str, list[str]]:
     arrays = {"HOOKS": [], "MODULES": [], "FILES": [], "BINARIES": []}
     if not path.is_file():
@@ -266,7 +291,17 @@ def build_initramfs(context) -> list[Kernel]:
 def setup_snapper(context) -> None:
     config = context.target_path("/etc/snapper/configs/root")
     if not config.exists():
-        run_target(["snapper", "--no-dbus", "-c", "root", "create-config", "--template", "catos-root", "/"], "create Snapper root configuration")
+        snapshots = context.target_path("/.snapshots")
+        if snapshots.is_dir():
+            template = context.target_path("/etc/snapper/config-templates/catos-root")
+            if not template.is_file():
+                raise BootloaduError(f"missing Snapper configuration template: {template}")
+            write_text(config, template.read_text(encoding="utf-8"))
+            os.chmod(snapshots, 0o750)
+            register_snapper_config(context.target_path("/etc/conf.d/snapper"), "root")
+        else:
+            run_target(["snapper", "--no-dbus", "-c", "root", "create-config", "--template", "catos-root", "/"], "create Snapper root configuration")
+    run_target(["snapper", "--no-dbus", "-c", "root", "get-config"], "validate Snapper root configuration")
     run_target(["systemctl", "enable", "snapper-cleanup.timer"], "enable Snapper cleanup timer")
 
 

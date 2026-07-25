@@ -11,6 +11,10 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = ROOT / "usr/lib/calamares/modules/bootloadu"
 REGISTRY_PATH = ROOT / "usr/share/calamares/catos/bootloaders.yaml"
+MOUNT_CONFIG_PATHS = [
+    ROOT / "etc/calamares/modules/mount.conf",
+    ROOT / "usr/share/calamares-advanced/modules/mount.conf",
+]
 
 sys.path.insert(0, str(MODULE))
 if "libcalamares" not in sys.modules:
@@ -358,6 +362,49 @@ class BootloaduTests(unittest.TestCase):
             config = (root / "etc/catos/firmware-boot.conf").read_text(encoding="utf-8")
             self.assertIn("label_prefix = CatOS", config)
             self.assertNotIn("machine_id", config)
+
+    def test_btrfs_snapshot_store_is_a_separate_subvolume_in_both_profiles(self):
+        layouts = []
+        for path in MOUNT_CONFIG_PATHS:
+            with self.subTest(path=path):
+                document = yaml.safe_load(path.read_text(encoding="utf-8"))
+                layout = {
+                    entry["mountPoint"]: entry["subvolume"]
+                    for entry in document["btrfsSubvolumes"]
+                }
+                layouts.append(layout)
+                self.assertEqual(layout.get("/.snapshots"), "/@snapshots")
+        self.assertEqual(layouts[0], layouts[1])
+
+    def test_setup_snapper_registers_pre_mounted_snapshot_store(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            template = root / "etc/snapper/config-templates/catos-root"
+            template.parent.mkdir(parents=True)
+            template.write_text('SUBVOLUME="/"\nFSTYPE="btrfs"\n', encoding="utf-8")
+            snapshots = root / ".snapshots"
+            snapshots.mkdir()
+            conf_d = root / "etc/conf.d/snapper"
+            conf_d.parent.mkdir(parents=True)
+            conf_d.write_text('SNAPPER_CONFIGS="existing"\n', encoding="utf-8")
+            context = types.SimpleNamespace(
+                target_path=lambda path: root / str(path).lstrip("/"),
+            )
+
+            with mock.patch.object(boot_base, "run_target") as run_target:
+                boot_base.setup_snapper(context)
+
+            config = root / "etc/snapper/configs/root"
+            self.assertEqual(config.read_text(encoding="utf-8"), template.read_text(encoding="utf-8"))
+            self.assertEqual(conf_d.read_text(encoding="utf-8"), 'SNAPPER_CONFIGS="existing root"\n')
+            self.assertEqual(snapshots.stat().st_mode & 0o777, 0o750)
+            commands = [call.args[0] for call in run_target.call_args_list]
+            self.assertNotIn(
+                ["snapper", "--no-dbus", "-c", "root", "create-config", "--template", "catos-root", "/"],
+                commands,
+            )
+            self.assertIn(["snapper", "--no-dbus", "-c", "root", "get-config"], commands)
+            self.assertIn(["systemctl", "enable", "snapper-cleanup.timer"], commands)
 
     def test_partition_fact_helpers(self):
         partitions = [
