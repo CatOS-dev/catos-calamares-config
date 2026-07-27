@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    printf 'usage: %s USER PROFILE\n' "${0##*/}" >&2
+    exit 64
+}
+
+[[ $# -eq 2 ]] || usage
+
+user=$1
+profile=$2
+
+[[ $profile =~ ^[a-z0-9][a-z0-9-]*$ ]] || {
+    printf 'invalid Catdot Profile id: %s\n' "$profile" >&2
+    exit 65
+}
+
+passwd_entry=$(getent passwd "$user") || {
+    printf 'target user does not exist: %s\n' "$user" >&2
+    exit 66
+}
+
+IFS=: read -r account _ uid _ _ home shell <<< "$passwd_entry"
+[[ $account == "$user" && $uid != 0 ]] || {
+    printf 'refusing to activate Catdot Profile for user: %s\n' "$user" >&2
+    exit 67
+}
+
+[[ -d $home ]] || {
+    printf 'target home does not exist: %s\n' "$home" >&2
+    exit 68
+}
+
+home_uid=$(stat -c '%u' -- "$home")
+[[ $home_uid == "$uid" ]] || {
+    printf 'target home is not owned by %s: %s\n' "$user" "$home" >&2
+    exit 69
+}
+
+manifest="/usr/share/catdot/profiles/$profile/profile.toml"
+[[ -f $manifest ]] || {
+    printf 'Catdot Profile is not installed: %s\n' "$profile" >&2
+    exit 70
+}
+
+[[ -x /usr/bin/catdot ]] || {
+    printf 'catdot is not installed\n' >&2
+    exit 71
+}
+
+runuser -u "$user" -- env -i \
+    HOME="$home" \
+    USER="$user" \
+    LOGNAME="$user" \
+    SHELL="$shell" \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/bin \
+    XDG_CONFIG_HOME="$home/.config" \
+    XDG_DATA_HOME="$home/.local/share" \
+    XDG_STATE_HOME="$home/.local/state" \
+    /usr/bin/catdot select "$profile" --packages=verify

@@ -7,5 +7,7 @@ properties:
     basePackages: { type: array }
     requiredPackages: { type: array, default: [] }
     postInstallFiles: { type: array }
+    requiredPostInstallFiles: { type: array, default: [] }
+    requiredPostInstallExecutables: { type: array, default: [] }
     sync_db: { type: boolean, default: true }
 required: [ basePackages ]

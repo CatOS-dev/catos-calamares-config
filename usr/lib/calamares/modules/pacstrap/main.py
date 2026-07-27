@@ -311,24 +311,67 @@ def run():
         )
 
     # --- copy files post install ---
-    if "postInstallFiles" in libcalamares.job.configuration:
-        files_to_copy = libcalamares.job.configuration["postInstallFiles"]
-        for source_file in files_to_copy:
-            if (
-                repository_selection == CACHYOS_SELECTION
-                and source_file == "/etc/pacman.conf"
-            ):
-                continue
-            if os.path.exists(source_file):
-                try:
-                    libcalamares.utils.debug("Copying file {!s}".format(source_file))
-                    dest = os.path.normpath(root_mount_point + source_file)
-                    os.makedirs(os.path.dirname(dest), exist_ok=True)
-                    shutil.copy2(source_file, dest)
-                except Exception as e:
-                    libcalamares.utils.warning(
-                        "Failed to copy file {!s}, error {!s}".format(source_file, e)
-                    )
+    copy_groups = {
+        "postInstallFiles": libcalamares.job.configuration.get("postInstallFiles", []),
+        "requiredPostInstallFiles": libcalamares.job.configuration.get(
+            "requiredPostInstallFiles", []
+        ),
+        "requiredPostInstallExecutables": libcalamares.job.configuration.get(
+            "requiredPostInstallExecutables", []
+        ),
+    }
+    for key, value in copy_groups.items():
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            return "Bad configuration", f"{key} must be a list of file paths"
+
+    required_files = set(copy_groups["requiredPostInstallFiles"])
+    required_executables = set(copy_groups["requiredPostInstallExecutables"])
+    files_to_copy = list(
+        dict.fromkeys(
+            copy_groups["postInstallFiles"]
+            + copy_groups["requiredPostInstallFiles"]
+            + copy_groups["requiredPostInstallExecutables"]
+        )
+    )
+
+    for source_file in files_to_copy:
+        if (
+            repository_selection == CACHYOS_SELECTION
+            and source_file == "/etc/pacman.conf"
+        ):
+            continue
+
+        is_required = source_file in required_files or source_file in required_executables
+        if not os.path.isfile(source_file):
+            message = f"Installer file is missing: {source_file}"
+            if is_required:
+                return "Required installer file missing", message
+            libcalamares.utils.warning(message)
+            continue
+
+        if source_file in required_executables and not os.access(source_file, os.X_OK):
+            return (
+                "Required installer helper is not executable",
+                f"Installer helper is not executable: {source_file}",
+            )
+
+        try:
+            libcalamares.utils.debug("Copying file {!s}".format(source_file))
+            dest = os.path.normpath(root_mount_point + source_file)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copy2(source_file, dest)
+        except Exception as error:
+            message = f"Failed to copy installer file {source_file}: {error!s}"
+            if is_required:
+                return "Failed to copy required installer file", message
+            libcalamares.utils.warning(message)
+            continue
+
+        if source_file in required_executables and not os.access(dest, os.X_OK):
+            return (
+                "Required installer helper lost executable permissions",
+                f"Copied installer helper is not executable: {dest}",
+            )
 
     libcalamares.globalstorage.insert("online", True)
     libcalamares.job.setprogress(1.0)

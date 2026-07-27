@@ -1,0 +1,113 @@
+#!/bin/sh
+set -eu
+
+fail() {
+    printf 'configure-selected-desktop: %s\n' "$*" >&2
+    exit 1
+}
+
+warn() {
+    printf 'configure-selected-desktop: warning: %s\n' "$*" >&2
+}
+
+[ "$#" -eq 3 ] || fail "usage: configure-selected-desktop DESKTOP USER AUTOLOGIN_USER"
+
+desktop=$1
+target_user=$2
+autologin_user=$3
+[ -n "$autologin_user" ] || autologin_user=none
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+dm_script=$script_dir/configure-display-manager
+profile_script=$script_dir/activate-catdot-profile
+
+session=none
+profile=none
+
+case $desktop in
+    none)
+        set -- none
+        ;;
+    KDE-Desktop)
+        set -- plasmalogin sddm gdm lightdm
+        ;;
+    GNOME-Desktop)
+        set -- gdm lightdm sddm plasmalogin
+        ;;
+    Niri-dms)
+        session=niri
+        profile=catos-niri-dms
+        set -- ly gdm sddm lightdm plasmalogin
+        ;;
+    Niri-noctalia)
+        session=niri
+        profile=catos-niri-noctaliav5
+        set -- noctalia-greeter ly gdm sddm lightdm plasmalogin
+        ;;
+    Hyprland-dms)
+        session=hyprland
+        profile=catos-hyprland-dms
+        set -- ly gdm sddm lightdm plasmalogin
+        ;;
+    Deepin-Desktop)
+        set -- ddm lightdm sddm gdm
+        ;;
+    Xfce4|Cinnamon|Budgie-Desktop|MATE-Desktop)
+        set -- lightdm sddm gdm
+        ;;
+    Cosmic)
+        set -- cosmic-greeter gdm sddm lightdm
+        ;;
+    LXDE-Desktop)
+        set -- lightdm lxdm sddm gdm
+        ;;
+    LXQT-Desktop)
+        set -- sddm lightdm gdm
+        ;;
+    Sway)
+        session=sway
+        profile=catos-sway-settings
+        set -- ly gdm sddm lightdm
+        ;;
+    Labwc)
+        session=labwc
+        profile=catos-labwc-settings
+        set -- ly gdm sddm lightdm
+        ;;
+    Wayfire)
+        session=wayfire
+        profile=catos-wayfire-settings
+        set -- ly gdm sddm lightdm
+        ;;
+    *)
+        warn "unsupported desktop selection: $desktop; keeping Calamares defaults"
+        exit 0
+        ;;
+esac
+
+if [ ! -x "$dm_script" ]; then
+    warn "missing display-manager helper: $dm_script; keeping Calamares defaults"
+elif [ "$session" = none ]; then
+    if ! "$dm_script" --autologin-user "$autologin_user" "$@"; then
+        warn "display-manager setup failed; the installed system remains usable from a TTY"
+    fi
+else
+    if ! "$dm_script" \
+        --autologin-user "$autologin_user" \
+        --autologin-session "$session" \
+        "$@"; then
+        warn "display-manager setup failed; the installed system remains usable from a TTY"
+    fi
+fi
+
+if [ "$profile" != none ]; then
+    if [ -z "$target_user" ]; then
+        warn "desktop $desktop has no target user; skipping Catdot Profile activation"
+    elif [ ! -x "$profile_script" ]; then
+        warn "missing Catdot helper: $profile_script; skipping Profile activation"
+    elif ! "$profile_script" "$target_user" "$profile"; then
+        warn "Catdot Profile activation failed for $target_user; installation will continue"
+    fi
+fi
+
+exit 0

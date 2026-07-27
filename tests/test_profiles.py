@@ -283,13 +283,49 @@ class ProfileTests(unittest.TestCase):
             self.assertNotIn("catos-tela-icon-theme-blue", packages, desktop_name)
 
         for desktop_name in ("Niri-dms", "Hyprland-dms", "Sway", "Labwc", "Wayfire"):
-            self.assertIn("tela-icon-theme-git", all_desktop_packages[desktop_name])
+            self.assertIn("tela-circle-icon-theme-all", all_desktop_packages[desktop_name])
+            self.assertNotIn("tela-icon-theme-git", all_desktop_packages[desktop_name])
 
+        self.assertIn("tela-icon-theme-git", all_desktop_packages["KDE-Desktop"])
+        self.assertNotIn("tela-circle-icon-theme-all", all_desktop_packages["KDE-Desktop"])
         self.assertIn("catos-kwin-decoration", all_desktop_packages["KDE-Desktop"])
         self.assertNotIn(
             "kwin-decoration-sierra-breeze-enhanced-for-catos",
             all_desktop_packages["KDE-Desktop"],
         )
+
+    def test_desktop_setup_runs_after_package_installation(self):
+        settings = load_yaml("usr/share/calamares-advanced/settings.conf")
+        jobs = exec_sequence(settings)
+        instances = {
+            f"{item['module']}@{item['id']}"
+            for item in settings.get("instances", [])
+        }
+        self.assertIn("contextualprocess@desktop-setup", instances)
+        self.assertLess(jobs.index("users"), jobs.index("contextualprocess@desktop-setup"))
+        self.assertLess(jobs.index("pacman@default"), jobs.index("contextualprocess@desktop-setup"))
+        self.assertLess(jobs.index("paru@default"), jobs.index("contextualprocess@desktop-setup"))
+        self.assertLess(jobs.index("contextualprocess@desktop-setup"), jobs.index("shellprocess@final"))
+
+        chooser = load_yaml("usr/share/calamares-advanced/modules/packagechooser_desktop.conf")
+        self.assertEqual(chooser["method"], "netinstall-select")
+        contextual = load_yaml("usr/share/calamares-advanced/modules/contextualprocess_desktop-setup.conf")
+        self.assertFalse(contextual["dontChroot"])
+        mappings = contextual["packagechooser_desktop"]
+        self.assertEqual(set(mappings), {"", "*"})
+        self.assertIn("${USER}", mappings["*"]["command"])
+        self.assertIn("${gs[autoLoginUser]}", mappings["*"]["command"])
+
+        script_path = ROOT / "etc/calamares/scripts/activate-catdot-profile"
+        self.assertTrue(script_path.stat().st_mode & 0o111)
+        pacstrap = load_yaml("usr/share/calamares-advanced/modules/pacstrap.conf")
+        self.assertIn(
+            "/etc/calamares/scripts/activate-catdot-profile",
+            pacstrap["requiredPostInstallExecutables"],
+        )
+        script = script_path.read_text(encoding="utf-8")
+        self.assertIn('runuser -u "$user" -- env -i', script)
+        self.assertIn('--packages=verify', script)
 
     def test_desktop_chooser_assets_exist(self):
         chooser = load_yaml("usr/share/calamares-advanced/modules/packagechooser_desktop.conf")
@@ -401,7 +437,7 @@ class ProfileTests(unittest.TestCase):
         )
 
         pacstrap = load_yaml("usr/share/calamares-advanced/modules/pacstrap.conf")
-        self.assertIn(bootstrap, pacstrap["postInstallFiles"])
+        self.assertIn(bootstrap, pacstrap["requiredPostInstallExecutables"])
 
         repository_job = load_yaml(
             "usr/share/calamares-advanced/modules/contextualprocess_repository.conf"

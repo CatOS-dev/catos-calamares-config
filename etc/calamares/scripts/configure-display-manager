@@ -1,0 +1,364 @@
+#!/bin/sh
+set -eu
+
+root=${CATOS_DM_ROOT:-/}
+state_dir_rel=/run/calamares-display-manager
+state_dir=
+autologin_user=
+autologin_session=
+user_option_set=false
+session_option_set=false
+
+root_path() {
+    case $root in
+        /) printf '%s\n' "$1" ;;
+        *) printf '%s%s\n' "${root%/}" "$1" ;;
+    esac
+}
+
+state_dir=$(root_path "$state_dir_rel")
+
+fail() {
+    printf 'configure-display-manager: %s\n' "$*" >&2
+    exit 1
+}
+
+warn() {
+    printf 'configure-display-manager: warning: %s\n' "$*" >&2
+}
+
+is_executable() {
+    [ -x "$(root_path "$1")" ]
+}
+
+is_file() {
+    [ -f "$(root_path "$1")" ]
+}
+
+write_state() {
+    key=$1
+    value=$2
+    mkdir -p "$state_dir"
+    printf '%s\n' "$value" > "$state_dir/$key"
+}
+
+read_state() {
+    key=$1
+    default=$2
+    if [ -f "$state_dir/$key" ]; then
+        cat "$state_dir/$key"
+    else
+        printf '%s\n' "$default"
+    fi
+}
+
+validate_user() {
+    case $1 in
+        none) return 0 ;;
+        ''|*[!A-Za-z0-9_.-]*) fail "invalid automatic-login user: $1" ;;
+    esac
+}
+
+validate_session() {
+    case $1 in
+        none) return 0 ;;
+        ''|*[!A-Za-z0-9_.+-]*) fail "invalid automatic-login session: $1" ;;
+    esac
+}
+
+while [ "$#" -gt 0 ]; do
+    case $1 in
+        --autologin-user)
+            [ "$#" -ge 2 ] || fail "--autologin-user requires a value"
+            validate_user "$2"
+            autologin_user=$2
+            user_option_set=true
+            shift 2
+            ;;
+        --autologin-session)
+            [ "$#" -ge 2 ] || fail "--autologin-session requires a value"
+            validate_session "$2"
+            autologin_session=$2
+            session_option_set=true
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*) fail "unknown option: $1" ;;
+        *) break ;;
+    esac
+done
+
+if [ "$user_option_set" = true ]; then
+    write_state autologin-user "$autologin_user"
+fi
+if [ "$session_option_set" = true ]; then
+    write_state autologin-session "$autologin_session"
+fi
+
+# Option-only invocations are used by Calamares to capture GlobalStorage state.
+[ "$#" -gt 0 ] || exit 0
+
+if [ "$user_option_set" = false ]; then
+    autologin_user=$(read_state autologin-user none)
+fi
+if [ "$session_option_set" = false ]; then
+    autologin_session=$(read_state autologin-session none)
+fi
+
+cleanup_conflicts() {
+    systemd=$(root_path /etc/systemd/system)
+    rm -f "$systemd/display-manager.service"
+    rm -f "$systemd/multi-user.target.wants"/ly@*.service
+    for wants in graphical.target.wants multi-user.target.wants; do
+        for service in \
+            greetd.service gdm.service sddm.service lightdm.service \
+            plasmalogin.service cosmic-greeter.service lxdm.service ddm.service; do
+            rm -f "$systemd/$wants/$service"
+        done
+    done
+}
+
+traditional_available() {
+    name=$1
+    case $name in
+        gdm)
+            (is_executable /usr/bin/gdm || is_executable /usr/sbin/gdm) &&
+                is_file /usr/lib/systemd/system/gdm.service
+            ;;
+        sddm)
+            is_executable /usr/bin/sddm && is_file /usr/lib/systemd/system/sddm.service
+            ;;
+        lightdm)
+            is_executable /usr/bin/lightdm && is_file /usr/lib/systemd/system/lightdm.service
+            ;;
+        plasmalogin)
+            (is_executable /usr/bin/plasmalogin ||
+                is_executable /usr/lib/plasma-login-manager/plasmalogin) &&
+                is_file /usr/lib/systemd/system/plasmalogin.service
+            ;;
+        cosmic-greeter)
+            is_executable /usr/bin/cosmic-greeter &&
+                is_file /usr/lib/systemd/system/cosmic-greeter.service
+            ;;
+        lxdm)
+            (is_executable /usr/bin/lxdm || is_executable /usr/sbin/lxdm) &&
+                is_file /usr/lib/systemd/system/lxdm.service
+            ;;
+        ddm)
+            (is_executable /usr/bin/ddm || is_executable /usr/sbin/ddm) &&
+                is_file /usr/lib/systemd/system/ddm.service
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+service_for() {
+    case $1 in
+        gdm) printf '%s\n' gdm.service ;;
+        sddm) printf '%s\n' sddm.service ;;
+        lightdm) printf '%s\n' lightdm.service ;;
+        plasmalogin) printf '%s\n' plasmalogin.service ;;
+        cosmic-greeter) printf '%s\n' cosmic-greeter.service ;;
+        lxdm) printf '%s\n' lxdm.service ;;
+        ddm) printf '%s\n' ddm.service ;;
+        *) return 1 ;;
+    esac
+}
+
+ly_available() {
+    (is_executable /usr/bin/ly || is_executable /usr/bin/ly-dm) &&
+        is_file /usr/lib/systemd/system/ly@.service &&
+        is_file /etc/ly/config.ini
+}
+
+noctalia_available() {
+    is_executable /usr/bin/noctalia-greeter-session &&
+        is_executable /usr/bin/noctalia-greeter &&
+        is_executable /usr/bin/greetd &&
+        is_file /usr/lib/systemd/system/greetd.service || return 1
+
+    if [ "$root" = / ]; then
+        [ -x /usr/share/noctalia-greeter/setup_greetd_pam.sh ] &&
+            [ -x /usr/bin/noctalia-greeter-apply-appearance ]
+    fi
+}
+
+candidate_available() {
+    case $1 in
+        noctalia-greeter) noctalia_available ;;
+        ly) ly_available ;;
+        gdm|sddm|lightdm|plasmalogin|cosmic-greeter|lxdm|ddm)
+            traditional_available "$1"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+set_ini_value() {
+    file=$1
+    key=$2
+    value=$3
+    tmp=$file.tmp.$$
+    awk -v key="$key" -v value="$value" '
+        BEGIN { found = 0 }
+        $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+            print key " = " value
+            found = 1
+            next
+        }
+        { print }
+        END {
+            if (!found) print key " = " value
+        }
+    ' "$file" > "$tmp"
+    mv "$tmp" "$file"
+}
+
+configure_ly_autologin() {
+    config=$(root_path /etc/ly/config.ini)
+    [ -f "$config" ] || {
+        warn "Ly is installed but $config is missing"
+        return 1
+    }
+
+    if [ "$autologin_user" = none ]; then
+        set_ini_value "$config" auto_login_user null
+        set_ini_value "$config" auto_login_session null
+        return 0
+    fi
+
+    [ "$autologin_session" != none ] || {
+        warn "Ly automatic login for $autologin_user requires a desktop session"
+        return 1
+    }
+    set_ini_value "$config" auto_login_user "$autologin_user"
+    set_ini_value "$config" auto_login_session "$autologin_session"
+}
+
+lookup_target_account() {
+    passwd=$(root_path /etc/passwd)
+    group=$(root_path /etc/group)
+    [ -f "$passwd" ] && [ -f "$group" ] || return 1
+    greeter_uid=$(awk -F: '$1 == "greeter" { print $3; exit }' "$passwd")
+    greeter_gid=$(awk -F: '$1 == "greeter" { print $3; exit }' "$group")
+    [ -n "$greeter_uid" ] && [ -n "$greeter_gid" ]
+}
+
+ensure_greeter_account() {
+    greeter_uid=
+    greeter_gid=
+    if [ "$root" = / ]; then
+        if ! getent group greeter >/dev/null 2>&1; then
+            groupadd --system greeter
+        fi
+        if ! getent passwd greeter >/dev/null 2>&1; then
+            useradd --system --gid greeter --home-dir /var/lib/noctalia-greeter \
+                --shell /usr/bin/nologin greeter
+        fi
+        greeter_uid=$(id -u greeter)
+        greeter_gid=$(id -g greeter)
+    else
+        lookup_target_account || {
+            warn "target root has no greeter user and group; skipping Noctalia Greeter"
+            return 1
+        }
+    fi
+}
+
+configure_noctalia() {
+    ensure_greeter_account || return 1
+    data_dir=$(root_path /var/lib/noctalia-greeter)
+    mkdir -p "$data_dir" || return 1
+    chmod 0755 "$data_dir" || return 1
+    chown "$greeter_uid:$greeter_gid" "$data_dir" || return 1
+
+    if [ "$root" = / ]; then
+        pam_setup=/usr/share/noctalia-greeter/setup_greetd_pam.sh
+        appearance=/usr/bin/noctalia-greeter-apply-appearance
+        [ -x "$pam_setup" ] || {
+            warn "Noctalia greetd PAM setup helper is missing"
+            return 1
+        }
+        [ -x "$appearance" ] || {
+            warn "Noctalia appearance setup helper is missing"
+            return 1
+        }
+        "$pam_setup" || return 1
+        GREETER_USER=greeter "$appearance" --setup-system || return 1
+    fi
+
+    greetd_dir=$(root_path /etc/greetd)
+    mkdir -p "$greetd_dir" || return 1
+    cat > "$greetd_dir/config.toml" <<'EOF'
+[terminal]
+vt = 1
+
+[default_session]
+command = "/usr/bin/noctalia-greeter-session"
+user = "greeter"
+EOF
+}
+
+enable_traditional() {
+    service=$(service_for "$1")
+    systemd=$(root_path /etc/systemd/system)
+    mkdir -p "$systemd"
+    ln -s "/usr/lib/systemd/system/$service" "$systemd/display-manager.service"
+}
+
+enable_ly() {
+    wants=$(root_path /etc/systemd/system/multi-user.target.wants)
+    mkdir -p "$wants"
+    ln -s /usr/lib/systemd/system/ly@.service "$wants/ly@tty2.service"
+}
+
+enable_noctalia() {
+    systemd=$(root_path /etc/systemd/system)
+    mkdir -p "$systemd"
+    ln -s /usr/lib/systemd/system/greetd.service "$systemd/display-manager.service"
+}
+
+if [ "$1" = none ]; then
+    [ "$#" -eq 1 ] || fail "none cannot be combined with display-manager candidates"
+    cleanup_conflicts
+    exit 0
+fi
+
+selected=
+for candidate in "$@"; do
+    candidate_available "$candidate" || continue
+    case $candidate in
+        noctalia-greeter)
+            if ! configure_noctalia; then
+                warn "Noctalia Greeter configuration failed; trying the next candidate"
+                continue
+            fi
+            ;;
+        ly)
+            if ! configure_ly_autologin; then
+                warn "Ly configuration failed; trying the next candidate"
+                continue
+            fi
+            ;;
+    esac
+    selected=$candidate
+    break
+done
+
+if [ -z "$selected" ]; then
+    warn "no usable display manager found in candidate order: $*; keeping existing configuration"
+    exit 0
+fi
+
+cleanup_conflicts
+
+case $selected in
+    noctalia-greeter) enable_noctalia ;;
+    ly) enable_ly ;;
+    *) enable_traditional "$selected" ;;
+esac
+
+printf 'configure-display-manager: selected %s\n' "$selected"

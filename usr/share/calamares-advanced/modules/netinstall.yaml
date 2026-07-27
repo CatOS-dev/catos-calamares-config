@@ -348,9 +348,74 @@
           packages:
             - catos-gtk-settings
             - catos-graphite-gtk-theme
-            - tela-icon-theme-git
+            - tela-circle-icon-theme-all
             - catos-bibata-cursor
             - nwg-look
+            - qt6ct
+    - name: Niri-noctalia
+      description: Niri scrolling Wayland compositor with Noctalia Shell
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: Niri Noctalia core
+          description: Niri session, Noctalia Shell, XWayland bridge and Catdot profile
+          critical: true
+          packages:
+            - niri
+            - noctalia
+            - xwayland-satellite
+            - catos-niri-noctaliav5
+        - name: Recommended display manager
+          description: Noctalia Greeter and its greetd service
+          critical: false
+          packages:
+            - greetd
+            - noctalia-greeter
+        - name: Desktop services
+          description: Network, Bluetooth, audio and session utilities
+          critical: false
+          packages:
+            - network-manager-applet
+            - blueman
+            - pipewire-pulse
+            - wireplumber
+            - pavucontrol
+            - brightnessctl
+            - playerctl
+        - name: File integration
+          description: File manager, removable media and network shares
+          critical: false
+          packages:
+            - thunar
+            - thunar-archive-plugin
+            - thunar-volman
+            - tumbler
+            - gvfs
+            - gvfs-afc
+            - gvfs-gphoto2
+            - gvfs-mtp
+            - gvfs-nfs
+            - gvfs-smb
+        - name: Wayland tools
+          description: Screenshots, recording and clipboard utilities
+          critical: false
+          packages:
+            - grim
+            - slurp
+            - swappy
+            - wl-clipboard
+            - wf-recorder
+        - name: CatOS customization
+          description: CatOS themes, icons, cursor and appearance tools
+          critical: false
+          packages:
+            - catos-gtk-settings
+            - catos-graphite-gtk-theme
+            - tela-circle-icon-theme-all
+            - catos-bibata-cursor
+            - nwg-look
+            - qt5ct
             - qt6ct
     - name: Hyprland-dms
       description: Hyprland dynamic tiling Wayland compositor with Dank Material Shell
@@ -408,7 +473,7 @@
           packages:
             - catos-gtk-settings
             - catos-graphite-gtk-theme
-            - tela-icon-theme-git
+            - tela-circle-icon-theme-all
             - catos-bibata-cursor
             - nwg-look
             - qt6ct
@@ -868,7 +933,7 @@
           packages:
             - catos-gtk-settings
             - catos-graphite-gtk-theme
-            - tela-icon-theme-git
+            - tela-circle-icon-theme-all
             - catos-bibata-cursor
             - nwg-look
     - name: Labwc
@@ -925,7 +990,7 @@
           packages:
             - catos-gtk-settings
             - catos-graphite-gtk-theme
-            - tela-icon-theme-git
+            - tela-circle-icon-theme-all
             - catos-bibata-cursor
             - nwg-look
     - name: Wayfire
@@ -984,7 +1049,7 @@
           packages:
             - catos-gtk-settings
             - catos-graphite-gtk-theme
-            - tela-icon-theme-git
+            - tela-circle-icon-theme-all
             - catos-bibata-cursor
             - nwg-look
     - name: UKUI
