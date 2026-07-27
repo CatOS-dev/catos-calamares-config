@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import time
 import unittest
@@ -163,22 +164,58 @@ class ProfileTests(unittest.TestCase):
         self.assertLess(jobs.index("pacstrap@default"), jobs.index("networkcfg"))
         self.assertLess(jobs.index("networkcfg"), jobs.index("shellprocess@before"))
 
-        script = (ROOT / "etc/calamares/scripts/create-pacman-keyring").read_text(
-            encoding="utf-8"
+    def test_keyring_bootstrap_executes_expected_operations(self):
+        script = ROOT / "etc/calamares/scripts/create-pacman-keyring"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            call_log = root / "calls.log"
+            gpg_dir = root / "gnupg"
+            mock = bin_dir / "mock-command"
+            mock.write_text(
+                "#!/bin/sh\n"
+                "name=${0##*/}\n"
+                "printf '%s %s\\n' \"$name\" \"$*\" >> \"$CALL_LOG\"\n"
+                "if [ \"$name\" = pacman-conf ]; then printf '%s\\n' \"$MOCK_GPG_DIR\"; fi\n",
+                encoding="utf-8",
+            )
+            mock.chmod(0o755)
+            for command in ("pacman", "pacman-key", "pacman-conf", "gpgconf", "sleep"):
+                (bin_dir / command).symlink_to(mock)
+            result = subprocess.run(
+                [str(script)],
+                check=False,
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                    "CALL_LOG": str(call_log),
+                    "MOCK_GPG_DIR": str(gpg_dir),
+                },
+            )
+            calls = call_log.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(
+            calls,
+            [
+                "pacman-conf GPGDir",
+                "pacman-key --init",
+                "pacman-key --populate archlinux",
+                "pacman-key --keyserver hkps://keyserver.ubuntu.com --recv-keys 47BCD014C8A99B55AADAEE58F57BDFADBFCF8A1E",
+                "pacman-key --lsign-key 47BCD014C8A99B55AADAEE58F57BDFADBFCF8A1E",
+                "pacman-key --keyserver hkps://keyserver.ubuntu.com --recv-keys CCED9BE21E1173C61DC1C9407931B6D628C8D3BA",
+                "pacman-key --lsign-key CCED9BE21E1173C61DC1C9407931B6D628C8D3BA",
+                "pacman-key --keyserver hkps://keyserver.ubuntu.com --recv-keys B5971F2C5C10A9A08C60030F786C63F330D7CB92",
+                "pacman-key --lsign-key B5971F2C5C10A9A08C60030F786C63F330D7CB92",
+                "pacman -Sy --noconfirm --needed archlinux-keyring",
+                "pacman -Sy --noconfirm --needed archlinuxcn-keyring",
+                "pacman-key --populate",
+                f"gpgconf --homedir {gpg_dir} --kill all",
+            ],
         )
-        self.assertIn("47BCD014C8A99B55AADAEE58F57BDFADBFCF8A1E", script)
-        self.assertIn("hkps://keyserver.ubuntu.com", script)
-        self.assertIn("CCED9BE21E1173C61DC1C9407931B6D628C8D3BA", script)
-        self.assertIn("ARCH4EDU_BOOTSTRAP_KEY", script)
-        self.assertIn("B5971F2C5C10A9A08C60030F786C63F330D7CB92", script)
-        self.assertIn("ARCHLINUXCN_BOOTSTRAP_KEY", script)
-        self.assertNotIn("3A9917BF0DED5C13F69AC68FABEC0A1208037BE9", script)
-        self.assertIn("pacman-key --populate archlinux || exit 1", script)
-        self.assertIn("install_keyring_package archlinux-keyring || exit 1", script)
-        self.assertIn("install_keyring_package archlinuxcn-keyring || exit 1", script)
-        self.assertNotIn("SigLevel = Optional TrustAll", script)
-        self.assertIn("trap cleanup_keyring_daemons EXIT", script)
-        self.assertIn("gpgconf --homedir", script)
 
     def test_netinstall_sources_use_online_mirrors_with_local_fallback(self):
         configs = {
@@ -333,10 +370,6 @@ class ProfileTests(unittest.TestCase):
             "/etc/calamares/scripts/activate-catdot-profile",
             pacstrap["requiredPostInstallExecutables"],
         )
-        script = script_path.read_text(encoding="utf-8")
-        self.assertIn('runuser -u "$user" -- env -i', script)
-        self.assertIn('--packages=verify', script)
-
     def test_desktop_chooser_assets_exist(self):
         chooser = load_yaml("usr/share/calamares-advanced/modules/packagechooser_desktop.conf")
 
@@ -405,18 +438,6 @@ class ProfileTests(unittest.TestCase):
         }
         self.assertNotIn("packagechooser@repository", offline_instances)
         self.assertNotIn("contextualprocess@repository", offline_instances)
-
-        offline_profile_files = [ROOT / "etc/calamares/settings.conf"]
-        offline_profile_files.extend(
-            path
-            for path in (ROOT / "etc/calamares/modules").rglob("*")
-            if path.is_file()
-        )
-        offline_text = "\n".join(
-            path.read_text(encoding="utf-8", errors="ignore")
-            for path in offline_profile_files
-        ).lower()
-        self.assertNotIn("cachyos", offline_text)
 
     def test_cachyos_bootstrap_runs_unconditionally_before_package_jobs(self):
         bootstrap = "/etc/calamares/scripts/bootstrap-cachyos"

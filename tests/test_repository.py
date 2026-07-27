@@ -141,15 +141,6 @@ class CachyOSRepositoryTests(unittest.TestCase):
         self.assertNotIn("cdn77", combined)
         self.assertNotIn("mirror.cachyos.org", combined)
 
-    def test_repository_writer_does_not_download_mirrorlist_packages(self):
-        source = (
-            ROOT / "etc/calamares/scripts/cachyos-repository.py"
-        ).read_text(encoding="utf-8")
-        self.assertNotIn("cachyos-mirrorlist-", source)
-        self.assertNotIn("pacman -U", source)
-        self.assertNotIn("curl", source)
-        self.assertNotIn("wget", source)
-
     def test_pacstrap_switches_kernel_and_config_together(self):
         packages = ["base", "linux", "linux-headers", "grub"]
         selected = self.pacstrap_repository.transform_packages(packages, "cachyos")

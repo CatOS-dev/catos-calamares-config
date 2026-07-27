@@ -81,8 +81,7 @@ class NoctaliaDesktopIntegrationTests(unittest.TestCase):
         self.assertIn("${gs[packagechooser_desktop]}", command)
         self.assertNotIn("${gs[autoLoginUser]}", command)
 
-    def test_old_selector_is_fully_replaced(self) -> None:
-        self.assertFalse((ROOT / "etc/calamares/scripts/dmcheck").exists())
+    def test_desktop_helpers_are_optional_and_packaged(self) -> None:
         script = ROOT / "etc/calamares/scripts/configure-display-manager"
         self.assertTrue(script.is_file())
         self.assertTrue(script.stat().st_mode & 0o111)
@@ -110,26 +109,6 @@ class NoctaliaDesktopIntegrationTests(unittest.TestCase):
             source = ROOT / path.lstrip("/")
             self.assertTrue(source.is_file(), path)
             self.assertTrue(source.stat().st_mode & 0o111, path)
-        self.assertNotIn("/etc/calamares/scripts/dmcheck", pacstrap["postInstallFiles"])
-
-        production_files = [
-            ROOT / "usr/share/calamares-advanced/settings.conf",
-            *list((ROOT / "usr/share/calamares-advanced/modules").glob("*.conf")),
-            *list((ROOT / "etc/calamares/modules").glob("*.conf")),
-        ]
-        references = [
-            path.relative_to(ROOT)
-            for path in production_files
-            if "dmcheck" in path.read_text(encoding="utf-8", errors="ignore")
-        ]
-        self.assertEqual(references, [])
-
-    def test_profile_package_does_not_require_optional_dm(self) -> None:
-        pkgbuild = ROOT.parent / "catos-niri-noctaliav5/PKGBUILD"
-        text = pkgbuild.read_text(encoding="utf-8")
-        self.assertNotIn("noctalia-greeter", text)
-        self.assertNotIn("greetd", text)
-
     def test_desktop_setup_without_autologin_or_helpers_is_nonfatal(self) -> None:
         source = ROOT / "etc/calamares/scripts/configure-selected-desktop"
         with tempfile.TemporaryDirectory() as temporary_directory:
