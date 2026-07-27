@@ -311,15 +311,25 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(chooser["method"], "netinstall-select")
         contextual = load_yaml("usr/share/calamares-advanced/modules/contextualprocess_desktop-setup.conf")
         self.assertFalse(contextual["dontChroot"])
+        autologin_command = contextual["autoLoginUser"]["*"]["command"]
+        self.assertTrue(autologin_command.startswith("-"))
+        self.assertIn("--autologin-user", autologin_command)
+        self.assertIn("${gs[autoLoginUser]}", autologin_command)
         mappings = contextual["packagechooser_desktop"]
         self.assertEqual(set(mappings), {"", "*"})
-        self.assertIn("${USER}", mappings["*"]["command"])
-        self.assertIn("${gs[autoLoginUser]}", mappings["*"]["command"])
+        command = mappings["*"]["command"]
+        self.assertTrue(command.startswith("-"))
+        self.assertIn("${USER}", command)
+        self.assertNotIn("${gs[autoLoginUser]}", command)
 
         script_path = ROOT / "etc/calamares/scripts/activate-catdot-profile"
         self.assertTrue(script_path.stat().st_mode & 0o111)
         pacstrap = load_yaml("usr/share/calamares-advanced/modules/pacstrap.conf")
         self.assertIn(
+            "/etc/calamares/scripts/activate-catdot-profile",
+            pacstrap["postInstallFiles"],
+        )
+        self.assertNotIn(
             "/etc/calamares/scripts/activate-catdot-profile",
             pacstrap["requiredPostInstallExecutables"],
         )

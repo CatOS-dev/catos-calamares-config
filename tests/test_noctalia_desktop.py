@@ -1,4 +1,8 @@
+import os
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 import yaml
@@ -65,10 +69,17 @@ class NoctaliaDesktopIntegrationTests(unittest.TestCase):
         self.assertEqual(set(dm_group["packages"]), {"greetd", "noctalia-greeter"})
 
         setup = load_yaml("usr/share/calamares-advanced/modules/contextualprocess_desktop-setup.conf")
+        autologin_command = setup["autoLoginUser"]["*"]["command"]
+        self.assertTrue(autologin_command.startswith("-"))
+        self.assertIn("--autologin-user", autologin_command)
+        self.assertIn("${gs[autoLoginUser]}", autologin_command)
         mappings = setup["packagechooser_desktop"]
         self.assertEqual(set(mappings), {"", "*"})
-        self.assertIn("configure-selected-desktop", mappings["*"]["command"])
-        self.assertIn("${gs[packagechooser_desktop]}", mappings["*"]["command"])
+        command = mappings["*"]["command"]
+        self.assertTrue(command.startswith("-"))
+        self.assertIn("configure-selected-desktop", command)
+        self.assertIn("${gs[packagechooser_desktop]}", command)
+        self.assertNotIn("${gs[autoLoginUser]}", command)
 
     def test_old_selector_is_fully_replaced(self) -> None:
         self.assertFalse((ROOT / "etc/calamares/scripts/dmcheck").exists())
@@ -81,10 +92,21 @@ class NoctaliaDesktopIntegrationTests(unittest.TestCase):
 
         pacstrap = load_yaml("usr/share/calamares-advanced/modules/pacstrap.conf")
         required_executables = set(pacstrap["requiredPostInstallExecutables"])
-        self.assertIn("/etc/calamares/scripts/configure-display-manager", required_executables)
-        self.assertIn("/etc/calamares/scripts/configure-selected-desktop", required_executables)
-        self.assertIn("/etc/calamares/scripts/activate-catdot-profile", required_executables)
+        optional_files = set(pacstrap["postInstallFiles"])
+        optional_helpers = {
+            "/etc/calamares/scripts/configure-display-manager",
+            "/etc/calamares/scripts/configure-selected-desktop",
+            "/etc/calamares/scripts/activate-catdot-profile",
+            "/etc/calamares/scripts/customize_airootfs.sh",
+            "/etc/calamares/scripts/customize_before.sh",
+        }
+        self.assertTrue(optional_helpers <= optional_files)
+        self.assertTrue(optional_helpers.isdisjoint(required_executables))
         for path in required_executables:
+            source = ROOT / path.lstrip("/")
+            self.assertTrue(source.is_file(), path)
+            self.assertTrue(source.stat().st_mode & 0o111, path)
+        for path in optional_helpers:
             source = ROOT / path.lstrip("/")
             self.assertTrue(source.is_file(), path)
             self.assertTrue(source.stat().st_mode & 0o111, path)
@@ -107,6 +129,48 @@ class NoctaliaDesktopIntegrationTests(unittest.TestCase):
         text = pkgbuild.read_text(encoding="utf-8")
         self.assertNotIn("noctalia-greeter", text)
         self.assertNotIn("greetd", text)
+
+    def test_desktop_setup_without_autologin_or_helpers_is_nonfatal(self) -> None:
+        source = ROOT / "etc/calamares/scripts/configure-selected-desktop"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            script = Path(temporary_directory) / source.name
+            shutil.copy2(source, script)
+            result = subprocess.run(
+                [str(script), "Niri-noctalia", "test-user"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("missing display-manager helper", result.stderr)
+        self.assertIn("missing Catdot helper", result.stderr)
+
+    def test_desktop_setup_without_autologin_preserves_cached_dm_state(self) -> None:
+        source = ROOT / "etc/calamares/scripts/configure-selected-desktop"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            script = directory / source.name
+            helper = directory / "configure-display-manager"
+            arguments = directory / "arguments"
+            shutil.copy2(source, script)
+            helper.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$@" > "$DM_ARGUMENTS"\n',
+                encoding="utf-8",
+            )
+            helper.chmod(0o755)
+            result = subprocess.run(
+                [str(script), "Niri-dms", "test-user"],
+                check=False,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "DM_ARGUMENTS": str(arguments)},
+            )
+            captured_arguments = arguments.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(captured_arguments[:2], ["--autologin-session", "niri"])
+        self.assertNotIn("--autologin-user", captured_arguments)
 
 
 if __name__ == "__main__":

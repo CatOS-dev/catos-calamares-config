@@ -10,12 +10,18 @@ warn() {
     printf 'configure-selected-desktop: warning: %s\n' "$*" >&2
 }
 
-[ "$#" -eq 3 ] || fail "usage: configure-selected-desktop DESKTOP USER AUTOLOGIN_USER"
+[ "$#" -ge 2 ] && [ "$#" -le 3 ] ||
+    fail "usage: configure-selected-desktop DESKTOP USER [AUTOLOGIN_USER]"
 
 desktop=$1
 target_user=$2
-autologin_user=$3
-[ -n "$autologin_user" ] || autologin_user=none
+autologin_user=none
+autologin_option_set=false
+if [ "$#" -eq 3 ]; then
+    autologin_user=$3
+    [ -n "$autologin_user" ] || autologin_user=none
+    autologin_option_set=true
+fi
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 dm_script=$script_dir/configure-display-manager
@@ -85,19 +91,27 @@ case $desktop in
         ;;
 esac
 
+configure_display_manager() {
+    if [ "$session" = none ]; then
+        if [ "$autologin_option_set" = true ]; then
+            "$dm_script" --autologin-user "$autologin_user" "$@"
+        else
+            "$dm_script" "$@"
+        fi
+    elif [ "$autologin_option_set" = true ]; then
+        "$dm_script" \
+            --autologin-user "$autologin_user" \
+            --autologin-session "$session" \
+            "$@"
+    else
+        "$dm_script" --autologin-session "$session" "$@"
+    fi
+}
+
 if [ ! -x "$dm_script" ]; then
     warn "missing display-manager helper: $dm_script; keeping Calamares defaults"
-elif [ "$session" = none ]; then
-    if ! "$dm_script" --autologin-user "$autologin_user" "$@"; then
-        warn "display-manager setup failed; the installed system remains usable from a TTY"
-    fi
-else
-    if ! "$dm_script" \
-        --autologin-user "$autologin_user" \
-        --autologin-session "$session" \
-        "$@"; then
-        warn "display-manager setup failed; the installed system remains usable from a TTY"
-    fi
+elif ! configure_display_manager "$@"; then
+    warn "display-manager setup failed; the installed system remains usable from a TTY"
 fi
 
 if [ "$profile" != none ]; then
