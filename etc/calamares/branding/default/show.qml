@@ -37,19 +37,10 @@ Presentation
         id: background1
         source: "catos1.png"
         width: parent.width; height: parent.height
-        horizontalAlignment: Image.AlignCenter
+        horizontalAlignment: Image.AlignHCenter
         verticalAlignment: Image.AlignTop
         fillMode: Image.Stretch
         anchors.fill: parent
-    	}
-
-    Text {
-        anchors.horizontalCenter: background.horizontalCenter
-        anchors.top: background.bottom
-        text: ""
-        wrapMode: Text.WordWrap
-        width: presentation.width
-        horizontalAlignment: Text.Center
     	}
     }
 
@@ -62,19 +53,10 @@ Presentation
         id: background2
         source: "catos2.png"
         width: parent.width; height: parent.height
-        horizontalAlignment: Image.AlignCenter
+        horizontalAlignment: Image.AlignHCenter
         verticalAlignment: Image.AlignTop
         fillMode: Image.Stretch
         anchors.fill: parent
-    	}
-
-    Text {
-        anchors.horizontalCenter: background.horizontalCenter
-        anchors.top: background.bottom
-        text: ""
-        wrapMode: Text.WordWrap
-        width: presentation.width
-        horizontalAlignment: Text.Center
     	}
     }
 
@@ -87,19 +69,10 @@ Presentation
         id: background3
         source: "catos3.png"
         width: parent.width; height: parent.height
-        horizontalAlignment: Image.AlignCenter
+        horizontalAlignment: Image.AlignHCenter
         verticalAlignment: Image.AlignTop
         fillMode: Image.Stretch
         anchors.fill: parent
-    	}
-
-    Text {
-        anchors.horizontalCenter: background.horizontalCenter
-        anchors.top: background.bottom
-        text: ""
-        wrapMode: Text.WordWrap
-        width: presentation.width
-        horizontalAlignment: Text.Center
     	}
     }
 
@@ -112,19 +85,10 @@ Presentation
         id: background4
         source: "qq.png"
         width: parent.width; height: parent.height
-        horizontalAlignment: Image.AlignCenter
+        horizontalAlignment: Image.AlignHCenter
         verticalAlignment: Image.AlignTop
         fillMode: Image.Stretch
         anchors.fill: parent
-    	}
-
-    Text {
-        anchors.horizontalCenter: background.horizontalCenter
-        anchors.top: background.bottom
-        text: ""
-        wrapMode: Text.WordWrap
-        width: presentation.width
-        horizontalAlignment: Text.Center
     	}
     }
 
