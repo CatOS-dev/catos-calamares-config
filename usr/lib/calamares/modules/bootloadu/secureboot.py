@@ -57,6 +57,8 @@ def enable_target_secure_boot(storage: Any, registry: dict[str, Any], context: A
     arguments = [
         "catos-secureboot",
         "enable",
+        "--provider",
+        context.provider_id,
         "--generate-enrollment-password",
         "--json",
     ]
@@ -74,10 +76,25 @@ def enable_target_secure_boot(storage: Any, registry: dict[str, Any], context: A
 
     fingerprint = payload.get("fingerprint")
     enrollment_pending = payload.get("enrollment_pending")
+    provider = payload.get("provider")
+    boot_chain_verified = payload.get("boot_chain_verified")
+    deployed_kernels_verified = payload.get("deployed_kernels_verified")
     if not isinstance(fingerprint, str) or not fingerprint:
         raise BootloaduError("catos-secureboot did not return a certificate fingerprint")
     if not isinstance(enrollment_pending, bool):
         raise BootloaduError("catos-secureboot did not report enrollment state")
+    if provider != context.provider_id:
+        raise BootloaduError(
+            f"catos-secureboot verified provider {provider!r}, expected {context.provider_id!r}"
+        )
+    if boot_chain_verified is not True:
+        raise BootloaduError("catos-secureboot did not verify the installed boot chain")
+    if context.provider_id == "grub" and (
+        isinstance(deployed_kernels_verified, bool)
+        or not isinstance(deployed_kernels_verified, int)
+        or deployed_kernels_verified < 1
+    ):
+        raise BootloaduError("catos-secureboot did not verify a deployed GRUB kernel")
 
     storage.insert("secureboot.certificateFingerprint", fingerprint)
     storage.insert("secureboot.enrollmentPending", enrollment_pending)

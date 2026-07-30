@@ -109,6 +109,9 @@ class SecureBootTests(unittest.TestCase):
         context = types.SimpleNamespace(provider_id="grub", firmware="efi")
         payload = {
             "fingerprint": "AA:BB",
+            "provider": "grub",
+            "boot_chain_verified": True,
+            "deployed_kernels_verified": 1,
             "enrollment_pending": True,
             "enrollment_password": "one-time-secret",
             "kernels_signed": 1,
@@ -125,13 +128,44 @@ class SecureBootTests(unittest.TestCase):
             result = enable_target_secure_boot(storage, self.registry, context)
 
         output.assert_called_once_with(
-            ["catos-secureboot", "enable", "--generate-enrollment-password", "--json"]
+            [
+                "catos-secureboot",
+                "enable",
+                "--provider",
+                "grub",
+                "--generate-enrollment-password",
+                "--json",
+            ]
         )
         self.assertEqual(result["fingerprint"], "AA:BB")
         self.assertEqual(storage.value("secureboot.enrollmentPassword"), "one-time-secret")
         self.assertEqual(storage.value("secureboot.certificateFingerprint"), "AA:BB")
         self.assertTrue(storage.value("secureboot.enrollmentPending"))
         self.assertFalse(any("one-time-secret" in str(call) for call in debug.call_args_list))
+
+    def test_finalizer_rejects_an_unverified_or_wrong_boot_provider(self):
+        storage = Storage({"secureboot.enabled": True})
+        context = types.SimpleNamespace(provider_id="grub", firmware="efi")
+        base = {
+            "fingerprint": "AA:BB",
+            "provider": "grub",
+            "boot_chain_verified": True,
+            "deployed_kernels_verified": 1,
+            "enrollment_pending": True,
+        }
+        for override in (
+            {"provider": "systemd-boot"},
+            {"boot_chain_verified": False},
+            {"deployed_kernels_verified": 0},
+        ):
+            with self.subTest(override=override), mock.patch.object(
+                secureboot_module.libcalamares.utils,
+                "check_target_env_output",
+                return_value=json.dumps(base | override),
+                create=True,
+            ):
+                with self.assertRaises(BootloaduError):
+                    enable_target_secure_boot(storage, self.registry, context)
 
     def test_finalizer_is_noop_when_live_secure_boot_is_disabled(self):
         storage = Storage({"secureboot.enabled": False})
