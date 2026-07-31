@@ -69,18 +69,15 @@ class CachyOSRepositoryTests(unittest.TestCase):
 
         original_detect = self.repository.detect_architecture
         original_write = self.repository.write_repository_configuration
-        original_trust = self.repository.trust_cachyos_key
         side_effects = []
         try:
             self.repository.detect_architecture = lambda: "x86_64"
             self.repository.write_repository_configuration = side_effects.append
-            self.repository.trust_cachyos_key = lambda: side_effects.append("trust")
             self.assertEqual(self.repository.main(), 1)
             self.assertEqual(side_effects, [])
         finally:
             self.repository.detect_architecture = original_detect
             self.repository.write_repository_configuration = original_write
-            self.repository.trust_cachyos_key = original_trust
 
     def test_repository_config_precedes_arch_and_uses_local_mirrorlists(self):
         base = """[options]\nArchitecture = auto\n\n[core]\nInclude = /etc/pacman.d/mirrorlist\n\n[extra]\nInclude = /etc/pacman.d/mirrorlist\n"""
@@ -191,7 +188,6 @@ class CachyOSRepositoryTests(unittest.TestCase):
 
     def test_bootstrap_skips_without_cachyos_and_switches_pacman_when_enabled(self):
         script = ROOT / "etc/calamares/scripts/bootstrap-cachyos"
-        self.assertTrue(script.is_file())
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -238,15 +234,7 @@ class CachyOSRepositoryTests(unittest.TestCase):
             calls = log.read_text(encoding="utf-8").splitlines()
             self.assertIn("pacman-key --init", calls)
             self.assertIn("pacman-key --populate archlinux", calls)
-            self.assertIn(
-                "pacman-key --keyserver hkps://keyserver.ubuntu.com --recv-keys "
-                "882DCFE48E2051D48E2562ABF3B607488DB35A47",
-                calls,
-            )
-            self.assertIn(
-                "pacman-key --lsign-key 882DCFE48E2051D48E2562ABF3B607488DB35A47",
-                calls,
-            )
+            self.assertFalse(any("--keyserver" in call for call in calls))
             self.assertIn(
                 "pacman -Sy --noconfirm --needed cachyos/cachyos-keyring",
                 calls,

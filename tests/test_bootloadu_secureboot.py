@@ -10,7 +10,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = ROOT / "usr/lib/calamares/modules/bootloadu"
-REGISTRY_PATH = ROOT / "usr/share/calamares/catos/bootloaders.yaml"
+REGISTRY_PATH = ROOT / "usr/share/calamares-advanced/modules/bootloaders.yaml"
 
 sys.path.insert(0, str(MODULE))
 if "libcalamares" not in sys.modules:

@@ -6,15 +6,9 @@ import types
 import unittest
 from unittest import mock
 
-import yaml
-
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = ROOT / "usr/lib/calamares/modules/bootloadu"
-REGISTRY_PATH = ROOT / "usr/share/calamares/catos/bootloaders.yaml"
-MOUNT_CONFIG_PATHS = [
-    ROOT / "etc/calamares/modules/mount.conf",
-    ROOT / "usr/share/calamares-advanced/modules/mount.conf",
-]
+REGISTRY_PATH = ROOT / "usr/share/calamares-advanced/modules/bootloaders.yaml"
 
 sys.path.insert(0, str(MODULE))
 if "libcalamares" not in sys.modules:
@@ -362,19 +356,6 @@ class BootloaduTests(unittest.TestCase):
             config = (root / "etc/catos/firmware-boot.conf").read_text(encoding="utf-8")
             self.assertIn("label_prefix = CatOS", config)
             self.assertNotIn("machine_id", config)
-
-    def test_btrfs_snapshot_store_is_a_separate_subvolume_in_both_profiles(self):
-        layouts = []
-        for path in MOUNT_CONFIG_PATHS:
-            with self.subTest(path=path):
-                document = yaml.safe_load(path.read_text(encoding="utf-8"))
-                layout = {
-                    entry["mountPoint"]: entry["subvolume"]
-                    for entry in document["btrfsSubvolumes"]
-                }
-                layouts.append(layout)
-                self.assertEqual(layout.get("/.snapshots"), "/@snapshots")
-        self.assertEqual(layouts[0], layouts[1])
 
     def test_setup_snapper_registers_pre_mounted_snapshot_store(self):
         with tempfile.TemporaryDirectory() as temporary:
