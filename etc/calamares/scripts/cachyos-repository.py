@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import time
 
 
 GENERATED_DIR = Path("/run/calamares/cachyos")
@@ -13,8 +12,6 @@ PACMAN_CONFIG = GENERATED_DIR / "pacman.conf"
 TARGET_PACMAN_CONFIG = GENERATED_DIR / "target-pacman.conf"
 MIRRORLIST_DIR = GENERATED_DIR / "pacman.d"
 SOURCE_PACMAN_CONFIG = Path("/etc/pacman.conf")
-CACHYOS_FINGERPRINT = "882DCFE48E2051D48E2562ABF3B607488DB35A47"
-KEYSERVER = "hkps://keyserver.ubuntu.com"
 MANAGED_BEGIN = "# BEGIN CATOS CACHYOS REPOSITORIES"
 MANAGED_END = "# END CATOS CACHYOS REPOSITORIES"
 SUPPORTED_ARCHITECTURES = frozenset({"v3", "v4", "znver4"})
@@ -221,29 +218,6 @@ def write_repository_configuration(architecture: str) -> None:
     _write_text(GENERATED_DIR / "architecture", architecture + "\n")
 
 
-def trust_cachyos_key() -> None:
-    receive_command = [
-        "pacman-key",
-        "--keyserver",
-        KEYSERVER,
-        "--recv-keys",
-        CACHYOS_FINGERPRINT,
-    ]
-    sign_command = ["pacman-key", "--lsign-key", CACHYOS_FINGERPRINT]
-    last_error = None
-    for attempt in range(1, 4):
-        try:
-            subprocess.run(receive_command, check=True)
-            subprocess.run(sign_command, check=True)
-            return
-        except subprocess.CalledProcessError as error:
-            last_error = error
-            if attempt < 3:
-                time.sleep(2)
-    if last_error is not None:
-        raise last_error
-
-
 def main() -> int:
     architecture = detect_architecture()
     print(f"Detected CachyOS repository architecture: {architecture}")
@@ -261,7 +235,6 @@ def main() -> int:
         + ", ".join(repository_names(architecture, include_base_repository=True))
     )
     write_repository_configuration(architecture)
-    trust_cachyos_key()
     return 0
 
 
