@@ -5,12 +5,24 @@ from pathlib import Path
 import os
 import re
 import shlex
+import subprocess
 
 import libcalamares
 
 
 class BootloaduError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        command: list[str] | None = None,
+        returncode: int | None = None,
+        output: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.command = list(command) if command else None
+        self.returncode = returncode
+        self.output = output
 
 
 SNAPSHOT_OVERLAY_HOOKS = {
@@ -22,9 +34,29 @@ SNAPSHOT_OVERLAY_HOOKS = {
 
 def run_target(arguments: list[str], description: str) -> None:
     libcalamares.utils.debug(f"bootloadu: {description}: {shlex.join(arguments)}")
-    result = libcalamares.utils.target_env_call(arguments)
-    if result != 0:
-        raise BootloaduError(f"{description} failed with exit code {result}")
+    output_lines: list[str] = []
+
+    def capture_output(line: str) -> None:
+        text = str(line).rstrip("\n")
+        output_lines.append(text)
+        libcalamares.utils.debug(f"bootloadu: {text}")
+
+    try:
+        libcalamares.utils.target_env_process_output(arguments, capture_output)
+    except subprocess.CalledProcessError as error:
+        for value in (getattr(error, "stdout", None), getattr(error, "output", None), getattr(error, "stderr", None)):
+            if value is None:
+                continue
+            text = value.decode(errors="replace") if isinstance(value, bytes) else str(value)
+            for line in text.splitlines():
+                if line and line not in output_lines:
+                    output_lines.append(line)
+        raise BootloaduError(
+            f"{description} failed with exit code {error.returncode}",
+            command=arguments,
+            returncode=error.returncode,
+            output="\n".join(output_lines),
+        ) from error
 
 
 def target_has(program: str) -> bool:

@@ -71,6 +71,7 @@ def load_module(name: str, relative: str, fake: FakeCalamares, dependencies: dic
         raise RuntimeError(f"cannot import {path}")
     module = importlib.util.module_from_spec(spec)
     injected = {
+        name: module,
         "libcalamares": fake.module,
         "libcalamares.utils": fake.utils,
         **dependencies,
@@ -455,6 +456,37 @@ class RecoveryFailureContextTests(unittest.TestCase):
         self.assertEqual(context["stage"], "install")
         self.assertEqual(context["provider"], "limine")
         self.assertIn("registry unavailable", context["details"])
+
+    def test_bootloader_command_failure_preserves_real_output(self) -> None:
+        fake = FakeCalamares()
+
+        def fail_command(arguments, callback) -> None:
+            callback("probing EFI variables")
+            callback("efibootmgr: No space left on device")
+            raise subprocess.CalledProcessError(
+                7,
+                arguments,
+                output="efibootmgr stdout",
+                stderr="efibootmgr stderr",
+            )
+
+        fake.utils.target_env_process_output = fail_command
+        module = load_module(
+            "catos_test_bootloadu_base_output",
+            "usr/lib/calamares/modules/bootloadu/providers/base.py",
+            fake,
+            {},
+        )
+
+        with self.assertRaises(module.BootloaduError) as captured:
+            module.run_target(["efibootmgr", "--create"], "register EFI entry")
+
+        error = captured.exception
+        self.assertEqual(error.command, ["efibootmgr", "--create"])
+        self.assertEqual(error.returncode, 7)
+        self.assertIn("probing EFI variables", error.output)
+        self.assertIn("No space left on device", error.output)
+        self.assertIn("efibootmgr stderr", error.output)
 
 
 if __name__ == "__main__":

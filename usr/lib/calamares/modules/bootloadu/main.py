@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import gettext
 from pathlib import Path
+import shlex
 import sys
 
 import libcalamares
@@ -80,14 +81,24 @@ def run():
         return None
     except (BootloaduError, ContextError, RegistryError, OSError, ValueError) as error:
         libcalamares.utils.error(f"bootloadu: {error}")
+        failure_context = {
+            "source": "bootloadu",
+            "stage": phase,
+            "summary": _("Boot setup failed"),
+            "details": str(error),
+            "provider": provider_id,
+        }
+        command = getattr(error, "command", None)
+        if command:
+            failure_context["command"] = shlex.join(command)
+        returncode = getattr(error, "returncode", None)
+        if returncode is not None:
+            failure_context["exitCode"] = returncode
+        output = getattr(error, "output", "")
+        if output:
+            failure_context["output"] = output
         libcalamares.globalstorage.insert(
             "recovery.failureContext",
-            {
-                "source": "bootloadu",
-                "stage": phase,
-                "summary": _("Boot setup failed"),
-                "details": str(error),
-                "provider": provider_id,
-            },
+            failure_context,
         )
         return _("Boot setup failed"), str(error)
