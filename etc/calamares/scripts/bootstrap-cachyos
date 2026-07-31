@@ -5,8 +5,6 @@ exec 2>&1
 set -u
 
 PACMAN_CONFIG="${CACHYOS_BOOTSTRAP_PACMAN_CONFIG:-/etc/pacman.conf}"
-KEYSERVER="hkps://keyserver.ubuntu.com"
-CACHYOS_KEY="882DCFE48E2051D48E2562ABF3B607488DB35A47"
 
 if [[ ! -r "$PACMAN_CONFIG" ]] || ! grep -qi 'cachyos' "$PACMAN_CONFIG"; then
     echo "CachyOS repositories are not enabled; skipping CachyOS bootstrap."
@@ -19,22 +17,6 @@ cleanup_keyring_daemons() {
     gpgconf --homedir "$GPG_DIR" --kill all >/dev/null 2>&1 || true
 }
 trap cleanup_keyring_daemons EXIT
-
-receive_and_lsign() {
-    local fingerprint="$1"
-    local attempt
-
-    for attempt in 1 2 3; do
-        if pacman-key --keyserver "$KEYSERVER" --recv-keys "$fingerprint" \
-            && pacman-key --lsign-key "$fingerprint"; then
-            return 0
-        fi
-        sleep 2
-    done
-
-    echo "Failed to bootstrap CachyOS signing key: $fingerprint"
-    return 1
-}
 
 install_keyring() {
     local attempt
@@ -79,7 +61,6 @@ enable_automatic_architecture() {
 
 pacman-key --init || exit 1
 pacman-key --populate archlinux || exit 1
-receive_and_lsign "$CACHYOS_KEY" || exit 1
 install_keyring || exit 1
 pacman-key --populate cachyos || exit 1
 install_cachyos_pacman || exit 1

@@ -4,10 +4,7 @@ exec 2>&1
 
 set -u
 
-KEYSERVER="hkps://keyserver.ubuntu.com"
-CATOS_KEY="47BCD014C8A99B55AADAEE58F57BDFADBFCF8A1E"
-ARCH4EDU_BOOTSTRAP_KEY="CCED9BE21E1173C61DC1C9407931B6D628C8D3BA"
-ARCHLINUXCN_BOOTSTRAP_KEY="B5971F2C5C10A9A08C60030F786C63F330D7CB92"
+CACHYOS_KEY_FILE="${CACHYOS_KEY_FILE:-/usr/share/calamares/catos-keys/cachyos.asc}"
 GPG_DIR="$(pacman-conf GPGDir 2>/dev/null || printf '%s\n' /etc/pacman.d/gnupg)"
 
 cleanup_keyring_daemons() {
@@ -15,50 +12,17 @@ cleanup_keyring_daemons() {
 }
 trap cleanup_keyring_daemons EXIT
 
-receive_and_lsign() {
-    local fingerprint="$1"
-    local attempt
-
-    for attempt in 1 2 3; do
-        if pacman-key --keyserver "$KEYSERVER" --recv-keys "$fingerprint" \
-            && pacman-key --lsign-key "$fingerprint"; then
-            return 0
-        fi
-        sleep 2
-    done
-
-    echo "Failed to bootstrap package signing key: $fingerprint"
-    return 1
+require_file() {
+    local path="$1"
+    [[ -r "$path" ]] || {
+        echo "Required installer keyring file is missing: $path"
+        exit 1
+    }
 }
 
 pacman-key --init || exit 1
 pacman-key --populate archlinux || exit 1
-
-# CatOS packages are verified with the release key fetched independently from
-# the package repository. The target intentionally does not install catos-keyring.
-receive_and_lsign "$CATOS_KEY" || exit 1
-
-# Trust the Arch4Edu repository signing key before refreshing databases.
-receive_and_lsign "$ARCH4EDU_BOOTSTRAP_KEY" || exit 1
-
-# Verify the signed archlinuxcn-keyring bootstrap package.
-receive_and_lsign "$ARCHLINUXCN_BOOTSTRAP_KEY" || exit 1
-
-install_keyring_package() {
-    local package="$1"
-    local attempt
-
-    for attempt in 1 2 3 4 5; do
-        if pacman -Sy --noconfirm --needed "$package"; then
-            return 0
-        fi
-        sleep 2
-    done
-
-    echo "Failed to install keyring package: $package"
-    return 1
-}
-
-install_keyring_package archlinux-keyring || exit 1
-install_keyring_package archlinuxcn-keyring || exit 1
-pacman-key --populate || exit 1
+require_file "$CACHYOS_KEY_FILE"
+pacman-key --add "$CACHYOS_KEY_FILE" || exit 1
+pacman-key --lsign-key 882DCFE48E2051D48E2562ABF3B607488DB35A47 || exit 1
+pacman-key --populate catos arch4edu archlinuxcn || exit 1
