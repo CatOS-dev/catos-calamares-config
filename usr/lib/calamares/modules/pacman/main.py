@@ -13,6 +13,7 @@ import subprocess
 import gettext
 import sys
 import os
+import time
 from pathlib import Path
 
 import libcalamares
@@ -26,6 +27,14 @@ for path in (MODULE_DIR, MODULES_DIR):
         sys.path.insert(0, str(path))
 import pkgcheck
 from recovery_context import build_failure_context
+from package_progress import (
+    TransferSampler,
+    build_pacman_plan_command,
+    format_transfer_status,
+    map_progress,
+    parse_download_plan,
+    parse_transaction_progress,
+)
 
 
 _translation = gettext.translation(
@@ -211,6 +220,38 @@ def _failure(summary, description, error, stage):
     return summary, details
 
 
+def _target_cache_directories():
+    root_mount_point = Path(str(libcalamares.globalstorage.value("rootMountPoint") or "/"))
+    configured = []
+    try:
+        libcalamares.utils.target_env_process_output(
+            ["pacman-conf", "CacheDir"],
+            configured,
+        )
+    except Exception as error:
+        libcalamares.utils.warning(f"Could not query target pacman cache directories: {error!s}")
+    paths = []
+    for raw_path in configured:
+        target_path = str(raw_path).strip()
+        if target_path:
+            paths.append(root_mount_point / target_path.lstrip("/"))
+    if not paths:
+        paths.append(root_mount_point / "var/cache/pacman/pkg")
+    return tuple(dict.fromkeys(paths))
+
+
+def _target_download_plan(command):
+    plan_command = build_pacman_plan_command(command)
+    if plan_command is None:
+        return None
+    output = []
+    libcalamares.utils.target_env_process_output(
+        ["env", "LC_ALL=C", "LANG=C", *plan_command],
+        output,
+    )
+    return parse_download_plan(output)
+
+
 # --- Pacman backend only ---
 class PacmanManager:
     backend = "pacman"
@@ -228,128 +269,269 @@ class PacmanManager:
         self.pacman_disable_timeout = pacman_cfg.get("disable_download_timeout", False)
         self.pacman_needed_only = pacman_cfg.get("needed_only", False)
 
-        self.in_package_changes = False
         self.progress_fraction = 0.0
+        self.package_phase_start = 0.0
+        self.operation_start = 0.0
+        self.operation_end = 1.0
+        self.download_end = 0.70
+        self.transaction_end = 0.96
+        self.last_output_log_time = 0.0
+        self.last_transfer_log_time = 0.0
+        self.transaction_started = False
 
         def line_cb(line: str):
-            # Minimal pacman output handling (no spy / experimental hooks)
             global custom_status_message
             global recent_output
 
-            recent_output.append(line.rstrip())
+            text = line.strip()
+            if not text:
+                return
+            recent_output.append(text)
             recent_output[:] = recent_output[-200:]
-            if line.startswith(":: "):
-                self.in_package_changes = ("package" in line) or ("hooks" in line)
-            else:
-                if self.in_package_changes and line.endswith("...\n"):
-                    custom_status_message = "pacman: " + line.strip()
-                    libcalamares.job.setprogress(self.progress_fraction)
+            custom_status_message = "pacman: " + text
 
-            libcalamares.utils.debug(line.strip())
+            transaction_ratio = parse_transaction_progress(text)
+            if transaction_ratio is not None:
+                self.transaction_started = True
+                candidate = map_progress(
+                    self.download_end,
+                    self.transaction_end,
+                    transaction_ratio,
+                )
+                self.progress_fraction = max(self.progress_fraction, candidate)
+                libcalamares.job.setprogress(self.progress_fraction)
+
+            now = time.monotonic()
+            important = text.startswith(("error:", "warning:", "::"))
+            if important or now - self.last_output_log_time >= 0.5:
+                libcalamares.utils.debug("pacman: " + text)
+                self.last_output_log_time = now
 
         self.line_cb = line_cb
 
-    def reset_progress(self):
-        self.in_package_changes = False
-        if total_packages > 0:
-            self.progress_fraction = completed_packages * 1.0 / total_packages
+    def _set_progress_range(self, start, end):
+        self.operation_start = max(self.package_phase_start, float(start))
+        self.operation_end = max(self.operation_start, float(end))
+        self.progress_fraction = max(self.progress_fraction, self.operation_start)
+        self.transaction_started = False
+        self.download_end = map_progress(self.operation_start, self.operation_end, 0.72)
+        self.transaction_end = map_progress(self.operation_start, self.operation_end, 0.96)
+        libcalamares.job.setprogress(self.progress_fraction)
+
+    def reset_progress(self, *, preflight=False, progress_index=0, progress_count=1):
+        if total_packages > 0 and group_packages > 0:
+            group_start = map_progress(
+                self.package_phase_start,
+                1.0,
+                completed_packages * 1.0 / total_packages,
+            )
+            group_end = map_progress(
+                self.package_phase_start,
+                1.0,
+                min(1.0, (completed_packages + group_packages) * 1.0 / total_packages),
+            )
+            count = max(1, int(progress_count))
+            index = min(count - 1, max(0, int(progress_index)))
+            start = map_progress(group_start, group_end, index / count)
+            end = map_progress(group_start, group_end, (index + 1) / count)
+        elif preflight:
+            start = self.package_phase_start
+            end = max(start, 0.20)
         else:
-            self.progress_fraction = 0.0
+            start = self.package_phase_start
+            end = 1.0
+        self._set_progress_range(start, end)
+
+    def _report_transfer(self, snapshot):
+        global custom_status_message
+        if self.transaction_started:
+            return
+        custom_status_message = format_transfer_status(snapshot, _("Downloading packages"))
+        candidate = map_progress(
+            self.operation_start,
+            self.download_end,
+            snapshot.ratio,
+        )
+        self.progress_fraction = max(self.progress_fraction, candidate)
+        libcalamares.job.setprogress(self.progress_fraction)
+        now = time.monotonic()
+        if now - self.last_transfer_log_time >= 2.0:
+            libcalamares.utils.debug("pacman: " + custom_status_message)
+            self.last_transfer_log_time = now
 
     def run_pacman(self, command, callback=False):
-        """
-        Call pacman in a loop until it is successful or retries exhausted.
-        """
+        """Run pacman with best-effort real download telemetry."""
         pacman_count = 0
         while pacman_count <= self.pacman_num_retries:
             pacman_count += 1
+            self.transaction_started = False
+            heartbeat_callback = None
             try:
+                if callback:
+                    try:
+                        plan = _target_download_plan(command)
+                        if plan is not None and plan.total_bytes > 0:
+                            cache_directories = _target_cache_directories()
+                            sampler = TransferSampler(plan, cache_directories)
+
+                            def heartbeat_callback():
+                                try:
+                                    self._report_transfer(sampler.sample())
+                                except Exception as error:
+                                    libcalamares.utils.warning(f"pacman progress telemetry failed: {error!s}")
+
+                            heartbeat_callback()
+                            libcalamares.utils.debug(
+                                "pacman: planned {} package downloads".format(len(plan.downloads))
+                            )
+                        elif plan is not None:
+                            global custom_status_message
+                            custom_status_message = _("All required packages are cached; applying package changes")
+                            self.progress_fraction = max(self.progress_fraction, self.download_end)
+                            libcalamares.job.setprogress(self.progress_fraction)
+                    except Exception as error:
+                        libcalamares.utils.warning(f"pacman download telemetry unavailable: {error!s}")
+
                 localized_command = ["env", "LC_ALL=C", "LANG=C", *command]
                 if callback:
-                    libcalamares.utils.target_env_process_output(localized_command, self.line_cb)
+                    libcalamares.utils.target_env_process_output(
+                        localized_command,
+                        self.line_cb,
+                        "",
+                        0,
+                        True,
+                        heartbeat_callback,
+                    )
                 else:
                     libcalamares.utils.target_env_process_output(localized_command)
-                return
             except subprocess.CalledProcessError:
                 if pacman_count <= self.pacman_num_retries:
                     continue
                 raise
 
+            self.progress_fraction = max(self.progress_fraction, self.transaction_end)
+            if callback:
+                libcalamares.job.setprogress(self.progress_fraction)
+            return
+
     def update_db(self):
-        self.run_pacman(["pacman", "-Sy"])
+        command = ["pacman", "-Sy"]
+        if self.pacman_disable_timeout:
+            command.append("--disable-download-timeout")
+        phase_end = max(self.package_phase_start, 0.05)
+        self._set_progress_range(self.package_phase_start, phase_end)
+        self.run_pacman(command, callback=True)
+        self.progress_fraction = max(self.progress_fraction, phase_end)
+        libcalamares.job.setprogress(self.progress_fraction)
+        self.package_phase_start = max(self.package_phase_start, phase_end)
 
     def update_system(self):
         command = ["pacman", "-Su", "--noconfirm"]
         if self.pacman_disable_timeout:
             command.append("--disable-download-timeout")
-        self.run_pacman(command)
+        self.reset_progress(preflight=True)
+        self.run_pacman(command, callback=True)
+        self.package_phase_start = max(self.package_phase_start, self.operation_end)
 
     def full_upgrade(self):
-        command = ["pacman", "-Syu", "--noconfirm"]
-        if self.pacman_disable_timeout:
-            command.append("--disable-download-timeout")
-        self.reset_progress()
-        self.run_pacman(command, callback=True)
+        # Refresh first so the following read-only plan uses the exact databases
+        # that the real upgrade transaction will consume.
+        self.update_db()
+        self.update_system()
 
-    def install(self, pkgs, from_local=False):
-        command = ["pacman", "-U" if from_local else "-S", "--noconfirm", "--noprogressbar"]
+    def install(self, pkgs, from_local=False, *, progress_index=0, progress_count=1):
+        command = ["pacman", "-U" if from_local else "-S", "--noconfirm"]
         if self.pacman_needed_only:
             command.append("--needed")
         if self.pacman_disable_timeout:
             command.append("--disable-download-timeout")
         command += pkgs
 
-        self.reset_progress()
+        self.reset_progress(progress_index=progress_index, progress_count=progress_count)
         self.run_pacman(command, callback=True)
 
-    def remove(self, pkgs):
-        self.reset_progress()
+    def remove(self, pkgs, *, progress_index=0, progress_count=1):
+        self.reset_progress(progress_index=progress_index, progress_count=progress_count)
         self.run_pacman(["pacman", "-Rs", "--noconfirm"] + pkgs, callback=True)
 
     # --- operations, keeping upstream semantics ---
-    def install_package(self, packagedata, from_local=False):
+    def install_package(
+        self,
+        packagedata,
+        from_local=False,
+        *,
+        progress_index=0,
+        progress_count=1,
+    ):
         if isinstance(packagedata, str):
-            self.install([packagedata], from_local=from_local)
+            self.install(
+                [packagedata],
+                from_local=from_local,
+                progress_index=progress_index,
+                progress_count=progress_count,
+            )
         else:
             _run_script(packagedata.get("pre-script", ""))
-            self.install([packagedata["package"]], from_local=from_local)
+            self.install(
+                [packagedata["package"]],
+                from_local=from_local,
+                progress_index=progress_index,
+                progress_count=progress_count,
+            )
             _run_script(packagedata.get("post-script", ""))
 
-    def remove_package(self, packagedata):
+    def remove_package(self, packagedata, *, progress_index=0, progress_count=1):
         if isinstance(packagedata, str):
-            self.remove([packagedata])
+            self.remove(
+                [packagedata],
+                progress_index=progress_index,
+                progress_count=progress_count,
+            )
         else:
             _run_script(packagedata.get("pre-script", ""))
-            self.remove([packagedata["package"]])
+            self.remove(
+                [packagedata["package"]],
+                progress_index=progress_index,
+                progress_count=progress_count,
+            )
             _run_script(packagedata.get("post-script", ""))
 
     def operation_install(self, package_list, from_local=False):
         if all(isinstance(x, str) for x in package_list):
             self.install(package_list, from_local=from_local)
         else:
-            for p in package_list:
-                self.install_package(p, from_local=from_local)
+            count = len(package_list)
+            for index, package in enumerate(package_list):
+                self.install_package(
+                    package,
+                    from_local=from_local,
+                    progress_index=index,
+                    progress_count=count,
+                )
 
     def operation_try_install(self, package_list):
-        for p in package_list:
+        count = len(package_list)
+        for index, package in enumerate(package_list):
             try:
-                self.install_package(p)
+                self.install_package(package, progress_index=index, progress_count=count)
             except subprocess.CalledProcessError:
-                libcalamares.utils.warning(f"Could not install package {p}")
+                libcalamares.utils.warning(f"Could not install package {package}")
 
     def operation_remove(self, package_list):
         if all(isinstance(x, str) for x in package_list):
             self.remove(package_list)
         else:
-            for p in package_list:
-                self.remove_package(p)
+            count = len(package_list)
+            for index, package in enumerate(package_list):
+                self.remove_package(package, progress_index=index, progress_count=count)
 
     def operation_try_remove(self, package_list):
-        for p in package_list:
+        count = len(package_list)
+        for index, package in enumerate(package_list):
             try:
-                self.remove_package(p)
+                self.remove_package(package, progress_index=index, progress_count=count)
             except subprocess.CalledProcessError:
-                libcalamares.utils.warning(f"Could not remove package {p}")
+                libcalamares.utils.warning(f"Could not remove package {package}")
 
 
 def run_operations(pkgman: PacmanManager, entry: dict):
@@ -512,7 +694,9 @@ def run():
     custom_status_message = None
 
     if not total_packages:
-        # Everything got filtered out (or empty ops)
+        # Everything got filtered out (or empty ops); any preflight work is complete.
+        custom_status_message = None
+        libcalamares.job.setprogress(1.0)
         return None
 
     for entry in operations:

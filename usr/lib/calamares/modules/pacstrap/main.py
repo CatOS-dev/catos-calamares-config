@@ -2,11 +2,13 @@
 # -*- coding: utf-8 -*-
 
 import os
+import selectors
 import sys
 import subprocess
 import shutil
 import time
 import gettext
+from collections import deque
 from pathlib import Path
 
 import libcalamares
@@ -27,6 +29,15 @@ from pacstrap_repository import (  # noqa: E402
 )
 from secureboot import secure_boot_enabled as host_secure_boot_enabled  # noqa: E402
 from recovery_context import build_failure_context  # noqa: E402
+from package_progress import (  # noqa: E402
+    PACMAN_PRINT_FORMAT,
+    TerminalFrameDecoder,
+    TransferSampler,
+    format_transfer_status,
+    map_progress,
+    parse_download_plan,
+    parse_transaction_progress,
+)
 from registry import (  # noqa: E402
     RegistryError,
     load_bootloader_registry,
@@ -94,44 +105,92 @@ def pretty_status_message():
 
 
 def line_cb(line: str):
-    """
-    Writes every line to the debug log and displays it in calamares.
-    """
+    """Record a complete pacstrap terminal frame without fabricating progress."""
     global custom_status_message
     global status_update_time
     global recent_output
 
-    custom_status_message = line.strip()
-    recent_output.append(line.rstrip())
+    text = line.strip()
+    if not text:
+        return
+    custom_status_message = text
+    recent_output.append(text)
     recent_output = recent_output[-200:]
-    libcalamares.utils.debug("pacstrap: " + line.strip())
 
-    # Throttle UI updates a bit
-    if (time.time() - status_update_time) > 0.5:
-        libcalamares.job.setprogress(0)
-        status_update_time = time.time()
+    # Native package progress can produce many carriage-return frames. Keep the
+    # visible log live without flooding the persistent diagnostics log.
+    now = time.monotonic()
+    important = text.startswith(("error:", "warning:", "==>", "::"))
+    if important or now - status_update_time >= 0.5:
+        libcalamares.utils.debug("pacstrap: " + text)
+        status_update_time = now
 
 
-def run_in_host(command, line_func):
+def run_in_host(command, line_func, heartbeat_func=None, heartbeat_interval=0.5):
+    heartbeat_interval = max(0.05, float(heartbeat_interval))
     environment = os.environ.copy()
     environment.update({"LC_ALL": "C", "LANG": "C"})
     proc = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        universal_newlines=True,
-        bufsize=1,
+        bufsize=0,
         env=environment,
     )
-    for line in proc.stdout:
-        if line.strip():
-            line_func(line)
+    if proc.stdout is None:
+        proc.kill()
+        raise PacmanError(f"Failed to capture output: {' '.join(command)}", command=command)
+
+    decoder = TerminalFrameDecoder()
+    selector = selectors.DefaultSelector()
+    selector.register(proc.stdout, selectors.EVENT_READ)
+    output_frames = deque(maxlen=200)
+    reached_eof = False
+    last_heartbeat = time.monotonic()
+    try:
+        while not reached_eof:
+            select_timeout = min(0.25, heartbeat_interval) if heartbeat_func is not None else 0.25
+            events = selector.select(timeout=select_timeout)
+            for key, _mask in events:
+                chunk = os.read(key.fileobj.fileno(), 65536)
+                if not chunk:
+                    reached_eof = True
+                    break
+                for frame in decoder.feed(chunk):
+                    if frame.strip():
+                        output_frames.append(frame.strip())
+                        line_func(frame)
+            if proc.poll() is not None and not events:
+                chunk = os.read(proc.stdout.fileno(), 65536)
+                if chunk:
+                    for frame in decoder.feed(chunk):
+                        if frame.strip():
+                            output_frames.append(frame.strip())
+                            line_func(frame)
+                else:
+                    reached_eof = True
+            now = time.monotonic()
+            if heartbeat_func is not None and now - last_heartbeat >= heartbeat_interval:
+                try:
+                    heartbeat_func()
+                except Exception as error:
+                    libcalamares.utils.warning(f"pacstrap progress telemetry failed: {error!s}")
+                last_heartbeat = now
+        for frame in decoder.finish():
+            if frame.strip():
+                output_frames.append(frame.strip())
+                line_func(frame)
+    finally:
+        selector.close()
+        proc.stdout.close()
+
     proc.wait()
     if proc.returncode != 0:
         raise PacmanError(
             f"Failed to run: {' '.join(command)} (rc={proc.returncode})",
             command=command,
             returncode=proc.returncode,
+            output="\n".join(output_frames[-200:]),
         )
 
 
@@ -164,6 +223,44 @@ def _host_capture_lines(command):
     return [l for l in lines if l]
 
 
+def _download_plan(pacman_config, root_mount_point, packages):
+    cache_directory = Path(root_mount_point) / "var/cache/pacman/pkg"
+    cache_directory.mkdir(parents=True, exist_ok=True)
+    command = [
+        "pacman",
+        "--config",
+        pacman_config,
+        "-Sp",
+        "--print-format",
+        PACMAN_PRINT_FORMAT,
+        "--cachedir",
+        str(cache_directory),
+        "--noconfirm",
+        *packages,
+    ]
+    return parse_download_plan(_host_capture_lines(command)), cache_directory
+
+
+def _transfer_reporter(progress_start, progress_end, phase_state):
+    last_log_time = 0.0
+    last_progress = progress_start
+
+    def report(snapshot):
+        nonlocal last_log_time, last_progress
+        global custom_status_message
+        if phase_state["transaction_started"]:
+            return
+        custom_status_message = format_transfer_status(snapshot, _("Downloading packages"))
+        last_progress = max(last_progress, map_progress(progress_start, progress_end, snapshot.ratio))
+        libcalamares.job.setprogress(last_progress)
+        now = time.monotonic()
+        if now - last_log_time >= 2.0:
+            libcalamares.utils.debug("pacstrap: " + custom_status_message)
+            last_log_time = now
+
+    return report
+
+
 def _has_internet():
     # Calamares commonly uses hasInternet; your module also sets "online" at the end.
     return bool(libcalamares.globalstorage.value("hasInternet")) or bool(
@@ -185,12 +282,16 @@ def _maybe_sync_db_host(pacman_config):
         libcalamares.utils.warning("No internet detected; skipping pacman -Sy before pkgcheck.")
         return
 
+    global custom_status_message
+    custom_status_message = _("Refreshing repository databases")
+    libcalamares.job.setprogress(0.02)
     libcalamares.utils.debug("Syncing pacman database before pkgcheck (pacman -Sy)...")
     # Using run_in_host so output goes through line_cb for UI/log.
     run_in_host(
         ["pacman", "--config", pacman_config, "-Sy", "--noconfirm"],
         line_cb,
     )
+    libcalamares.job.setprogress(0.04)
 
 
 def _build_repo_index_host(pacman_config):
@@ -220,6 +321,7 @@ def run():
     recent_output.clear()
     custom_status_message = None
     status_update_time = 0
+    libcalamares.job.setprogress(0.01)
 
     root_mount_point = libcalamares.globalstorage.value("rootMountPoint")
 
@@ -413,8 +515,46 @@ def run():
         pacman_config,
         root_mount_point,
     ] + base_packages
+    heartbeat_func = None
+    phase_state = {"transaction_started": False, "progress": 0.0}
     try:
-        run_in_host(pacstrap_command, line_cb)
+        plan, cache_directory = _download_plan(pacman_config, root_mount_point, base_packages)
+        if plan.total_bytes > 0:
+            custom_status_message = _("Preparing package downloads")
+            libcalamares.job.setprogress(0.05)
+            sampler = TransferSampler(plan, [cache_directory])
+            reporter = _transfer_reporter(0.05, 0.78, phase_state)
+            heartbeat_func = lambda: reporter(sampler.sample())
+            heartbeat_func()
+            libcalamares.utils.debug(
+                "pacstrap: planned {} package downloads ({})".format(
+                    len(plan.downloads),
+                    format_transfer_status(
+                        TransferSampler(plan, [cache_directory]).sample(),
+                        _("Download plan"),
+                    ),
+                )
+            )
+        else:
+            custom_status_message = _("All required packages are cached; installing packages")
+            libcalamares.job.setprogress(0.78)
+    except Exception as error:
+        heartbeat_func = None
+        libcalamares.utils.warning(f"pacstrap download telemetry unavailable: {error!s}")
+
+    def install_output(frame):
+        line_cb(frame)
+        transaction_ratio = parse_transaction_progress(frame)
+        if transaction_ratio is not None:
+            phase_state["transaction_started"] = True
+            phase_state["progress"] = max(
+                phase_state["progress"],
+                map_progress(0.80, 0.96, transaction_ratio),
+            )
+            libcalamares.job.setprogress(phase_state["progress"])
+
+    try:
+        run_in_host(pacstrap_command, install_output, heartbeat_func)
     except PacmanError as pe:
         details = f"{pe}\nLast pacstrap output:\n" + "\n".join(recent_output)
         return _failure(
@@ -431,6 +571,8 @@ def run():
             error=e,
         )
 
+    libcalamares.job.setprogress(0.97)
+    custom_status_message = _("Finalizing the base system")
     try:
         install_repository_config(root_mount_point, repository_selection)
     except Exception as error:
@@ -442,6 +584,7 @@ def run():
         )
 
     # --- copy files post install ---
+    libcalamares.job.setprogress(0.98)
     copy_groups = {
         "postInstallFiles": libcalamares.job.configuration.get("postInstallFiles", []),
         "requiredPostInstallFiles": libcalamares.job.configuration.get(
