@@ -235,7 +235,7 @@ class RecoveryFailureContextTests(unittest.TestCase):
         self.assertIn("cachyos", fake.commands[1])
         self.assertNotIn("blackarch", fake.commands[1])
 
-    def test_repository_recovery_performs_full_refresh_before_package_work(self) -> None:
+    def test_repository_recovery_performs_one_full_upgrade_before_package_work(self) -> None:
         fake = FakeCalamares()
         fake.storage.insert("hasInternet", True)
         fake.storage.insert("recovery.refreshRepositories", True)
@@ -259,11 +259,8 @@ class RecoveryFailureContextTests(unittest.TestCase):
         calls: list[str] = []
 
         class FakePacmanManager:
-            def update_db(self) -> None:
-                calls.append("update_db")
-
-            def update_system(self) -> None:
-                calls.append("update_system")
+            def full_upgrade(self) -> None:
+                calls.append("full_upgrade")
 
         module.PacmanManager = FakePacmanManager
         module._refresh_target_keyring = lambda: calls.append("keyring")
@@ -271,8 +268,147 @@ class RecoveryFailureContextTests(unittest.TestCase):
         result = module.run()
 
         self.assertIsNone(result)
-        self.assertEqual(calls, ["keyring", "update_db", "update_system"])
+        self.assertEqual(calls, ["keyring", "full_upgrade"])
         self.assertNotIn("recovery.refreshRepositories", fake.storage.values)
+
+    def test_failed_repository_refresh_keeps_flag_and_skips_package_work(self) -> None:
+        fake = FakeCalamares()
+        fake.storage.insert("hasInternet", True)
+        fake.storage.insert("recovery.refreshRepositories", True)
+        fake.module.job.configuration = {
+            "backend": "pacman",
+            "skip_if_no_internet": False,
+            "update_db": False,
+            "update_system": False,
+            "operations": [{"install": ["linux"]}],
+            "pacman": {},
+        }
+        pkgcheck = module_stub("pkgcheck")
+        pkgcheck.build_repo_index = mock.Mock(side_effect=AssertionError("package work must not start"))
+        pkgcheck.preprocess_operations = mock.Mock(side_effect=AssertionError("package work must not start"))
+        module = load_module(
+            "catos_test_pacman_refresh_failure",
+            "usr/lib/calamares/modules/pacman/main.py",
+            fake,
+            {"pkgcheck": pkgcheck},
+        )
+
+        class FakePacmanManager:
+            def full_upgrade(self) -> None:
+                raise subprocess.CalledProcessError(
+                    1,
+                    ["pacman", "-Syu", "--noconfirm"],
+                    stderr="The requested URL returned error: 404",
+                )
+
+        module.PacmanManager = FakePacmanManager
+        module._refresh_target_keyring = lambda: None
+
+        result = module.run()
+
+        self.assertEqual(result[0], "Package Manager error")
+        self.assertIn("recovery.refreshRepositories", fake.storage.values)
+        context = fake.storage.values["recovery.failureContext"]
+        self.assertEqual(context["stage"], "repository-full-upgrade")
+        self.assertEqual(context["command"], "pacman -Syu --noconfirm")
+        self.assertIn("404", context["output"])
+        pkgcheck.build_repo_index.assert_not_called()
+
+    def test_keyring_population_fails_when_archlinux_keyring_is_missing(self) -> None:
+        fake = FakeCalamares()
+        module = load_module(
+            "catos_test_missing_required_keyring",
+            "usr/lib/calamares/modules/pacman/main.py",
+            fake,
+            {"pkgcheck": module_stub("pkgcheck")},
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            keyrings = root / "keyrings"
+            binaries = root / "bin"
+            keyrings.mkdir()
+            binaries.mkdir()
+            log = root / "pacman-key.log"
+            fake_pacman_key = binaries / "pacman-key"
+            fake_pacman_key.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$@" > "$PACMAN_KEY_LOG"\n',
+                encoding="utf-8",
+            )
+            fake_pacman_key.chmod(0o755)
+            environment = os.environ.copy()
+            environment["PATH"] = f"{binaries}:{environment['PATH']}"
+            environment["PACMAN_KEY_LOG"] = str(log)
+
+            result = subprocess.run(
+                module._keyring_populate_command(["archlinux", "catos"], str(keyrings)),
+                check=False,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("required keyring is missing", result.stderr)
+        self.assertFalse(log.exists())
+
+    def test_pacstrap_sync_failure_stops_before_repository_query(self) -> None:
+        fake = FakeCalamares()
+        registry_error = type("RegistryError", (Exception,), {})
+        module = load_module(
+            "catos_test_pacstrap_sync_failure",
+            "usr/lib/calamares/modules/pacstrap/main.py",
+            fake,
+            {
+                "pkgcheck": module_stub("pkgcheck", filter_operation_list=lambda *_args: []),
+                "pacstrap_repository": module_stub(
+                    "pacstrap_repository",
+                    CACHYOS_SELECTION="cachyos",
+                    install_repository_config=lambda *_args, **_kwargs: None,
+                    pacman_config_for=lambda *_args, **_kwargs: "/etc/pacman.conf",
+                    transform_packages=lambda packages, _selection: packages,
+                ),
+                "secureboot": module_stub("secureboot", secure_boot_enabled=lambda: False),
+                "registry": module_stub(
+                    "registry",
+                    RegistryError=registry_error,
+                    load_bootloader_registry=lambda: {},
+                    missing_required_packages=lambda *_args: [],
+                    package_plan=lambda *_args, **_kwargs: [],
+                ),
+            },
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            pacman_config = root / "pacman.conf"
+            pacman_config.write_text("[options]\n", encoding="utf-8")
+            fake.storage.insert("rootMountPoint", str(root))
+            fake.storage.insert("hasInternet", True)
+            fake.storage.insert("packagechooser_repository", "catos")
+            fake.storage.insert("firmwareType", "bios")
+            fake.module.job.configuration = {
+                "basePackages": ["base"],
+                "requiredPackages": [],
+            }
+            module.pacman_config_for = lambda _selection: str(pacman_config)
+            module._maybe_sync_db_host = mock.Mock(
+                side_effect=module.PacmanError(
+                    "sync failed",
+                    command=["pacman", "--config", str(pacman_config), "-Sy", "--noconfirm"],
+                    returncode=1,
+                    output="Could not resolve host: mirror.example",
+                )
+            )
+            module._build_repo_index_host = mock.Mock(
+                side_effect=AssertionError("repository query must not run after failed sync")
+            )
+
+            result = module.run()
+
+        self.assertEqual(result[0], "Package Manager error")
+        context = fake.storage.values["recovery.failureContext"]
+        self.assertEqual(context["stage"], "repository-database-sync")
+        self.assertIn("Could not resolve host", context["output"])
+        module._build_repo_index_host.assert_not_called()
 
     def test_bootloader_failure_records_provider_and_phase(self) -> None:
         fake = FakeCalamares()

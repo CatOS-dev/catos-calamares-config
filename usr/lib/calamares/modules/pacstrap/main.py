@@ -303,12 +303,19 @@ def run():
         f"pacman_config={pacman_config}, packages={base_packages}"
     )
 
-    # --- NEW: optional sync + pkgcheck filtering (host-side) ---
+    # Refresh the live environment's repository databases before deriving the
+    # package plan. Continuing with stale metadata after a failed refresh can
+    # select packages that the current mirrors no longer provide.
     try:
         _maybe_sync_db_host(pacman_config)
     except PacmanError as e:
-        # Don't abort just because sync failed; continue with existing DB.
-        libcalamares.utils.warning(f"pacman -Sy failed; continuing with existing sync DB: {e}")
+        libcalamares.utils.warning(f"pacman database refresh failed: {e}")
+        return _failure(
+            "Package Manager error",
+            "Could not refresh repository databases for base system installation",
+            "repository-database-sync",
+            error=e,
+        )
 
     try:
         repo_pkgs, repo_groups = _build_repo_index_host(pacman_config)

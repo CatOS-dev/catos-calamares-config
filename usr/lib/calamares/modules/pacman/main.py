@@ -132,10 +132,16 @@ def _keyring_populate_command(keyrings, keyring_dir="/usr/share/pacman/keyrings"
 set -eu
 keyring_dir="$1"
 shift
+if [ ! -f "${keyring_dir}/archlinux.gpg" ]; then
+    printf 'required keyring is missing: %s/archlinux.gpg\n' "$keyring_dir" >&2
+    exit 1
+fi
 available=""
 for keyring in "$@"; do
     if [ -f "${keyring_dir}/${keyring}.gpg" ]; then
         available="${available} ${keyring}"
+    else
+        printf 'optional keyring is unavailable: %s/%s.gpg\n' "$keyring_dir" "$keyring" >&2
     fi
 done
 [ -z "$available" ] || pacman-key --populate $available
@@ -272,6 +278,13 @@ class PacmanManager:
             command.append("--disable-download-timeout")
         self.run_pacman(command)
 
+    def full_upgrade(self):
+        command = ["pacman", "-Syu", "--noconfirm"]
+        if self.pacman_disable_timeout:
+            command.append("--disable-download-timeout")
+        self.reset_progress()
+        self.run_pacman(command, callback=True)
+
     def install(self, pkgs, from_local=False):
         command = ["pacman", "-U" if from_local else "-S", "--noconfirm", "--noprogressbar"]
         if self.pacman_needed_only:
@@ -399,10 +412,33 @@ def run():
         )
 
     recovery_refresh = bool(libcalamares.globalstorage.value("recovery.refreshRepositories"))
-    update_db = libcalamares.job.configuration.get("update_db", False) or recovery_refresh
-    update_system = libcalamares.job.configuration.get("update_system", False) or recovery_refresh
+    has_internet = bool(libcalamares.globalstorage.value("hasInternet"))
+    update_db = libcalamares.job.configuration.get("update_db", False)
+    update_system = libcalamares.job.configuration.get("update_system", False)
 
-    if update_db and libcalamares.globalstorage.value("hasInternet"):
+    if recovery_refresh:
+        if not has_internet:
+            return _failure(
+                _("Package Manager error"),
+                _("Network is unavailable; the required full repository refresh was not attempted."),
+                RuntimeError("Network is unreachable"),
+                "repository-full-upgrade",
+            )
+        try:
+            pkgman.full_upgrade()
+        except subprocess.CalledProcessError as e:
+            libcalamares.utils.warning(str(e))
+            libcalamares.utils.debug("stdout:" + str(getattr(e, "stdout", "")))
+            libcalamares.utils.debug("stderr:" + str(getattr(e, "stderr", "")))
+            return _failure(
+                _("Package Manager error"),
+                _("The package manager could not fully refresh repositories and upgrade the target system."),
+                e,
+                "repository-full-upgrade",
+            )
+        libcalamares.globalstorage.remove("recovery.refreshRepositories")
+
+    if not recovery_refresh and update_db and has_internet:
         try:
             pkgman.update_db()
         except subprocess.CalledProcessError as e:
@@ -416,7 +452,7 @@ def run():
                 "repository-database-sync",
             )
 
-    if update_system and libcalamares.globalstorage.value("hasInternet"):
+    if not recovery_refresh and update_system and has_internet:
         try:
             pkgman.update_system()
         except subprocess.CalledProcessError as e:
@@ -429,9 +465,6 @@ def run():
                 e,
                 "system-update",
             )
-
-    if recovery_refresh and libcalamares.globalstorage.value("hasInternet"):
-        libcalamares.globalstorage.remove("recovery.refreshRepositories")
 
     operations = libcalamares.job.configuration.get("operations", [])
     if libcalamares.globalstorage.contains("packageOperations"):
