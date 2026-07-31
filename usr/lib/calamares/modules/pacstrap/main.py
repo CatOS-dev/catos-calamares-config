@@ -169,6 +169,14 @@ def run():
     Also filters basePackages using pkgcheck: drops missing packages/groups with warnings.
     Optionally runs pacman -Sy before filtering (sync_db: true by default).
     """
+    global custom_status_message
+    global status_update_time
+    global recent_output
+
+    recent_output.clear()
+    custom_status_message = None
+    status_update_time = 0
+
     root_mount_point = libcalamares.globalstorage.value("rootMountPoint")
 
     if not root_mount_point:
