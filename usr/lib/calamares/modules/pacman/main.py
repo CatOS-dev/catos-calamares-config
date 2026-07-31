@@ -13,13 +13,19 @@ import subprocess
 import gettext
 import sys
 import os
+from pathlib import Path
 
 import libcalamares
 from libcalamares.utils import check_target_env_call
 from libcalamares.utils import gettext_path, gettext_languages
 
-sys.path.insert(0, "/usr/lib/calamares/modules/pacman")
+MODULE_DIR = Path(__file__).resolve().parent
+MODULES_DIR = MODULE_DIR.parent
+for path in (MODULE_DIR, MODULES_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 import pkgcheck
+from recovery_context import build_failure_context
 
 
 _translation = gettext.translation(
@@ -192,16 +198,15 @@ def _failure(summary, description, error, stage):
     )
     if output:
         details += "\nLast pacman output:\n" + output
-    context = {
-        "source": "pacman",
-        "stage": stage,
-        "summary": str(summary),
-        "details": str(description),
-        "command": _command_text(command),
-        "output": output,
-    }
-    if returncode is not None:
-        context["exitCode"] = int(returncode)
+    context = build_failure_context(
+        source="pacman",
+        stage=stage,
+        summary=str(summary),
+        details=str(description),
+        command=command,
+        exit_code=returncode,
+        output=output,
+    )
     libcalamares.globalstorage.insert("recovery.failureContext", context)
     return summary, details
 
@@ -259,10 +264,11 @@ class PacmanManager:
         while pacman_count <= self.pacman_num_retries:
             pacman_count += 1
             try:
+                localized_command = ["env", "LC_ALL=C", "LANG=C", *command]
                 if callback:
-                    libcalamares.utils.target_env_process_output(command, self.line_cb)
+                    libcalamares.utils.target_env_process_output(localized_command, self.line_cb)
                 else:
-                    libcalamares.utils.target_env_process_output(command)
+                    libcalamares.utils.target_env_process_output(localized_command)
                 return
             except subprocess.CalledProcessError:
                 if pacman_count <= self.pacman_num_retries:

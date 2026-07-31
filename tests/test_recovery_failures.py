@@ -8,6 +8,8 @@ import tempfile
 import sys
 import types
 import unittest
+
+import yaml
 from unittest import mock
 
 
@@ -124,8 +126,11 @@ class RecoveryFailureContextTests(unittest.TestCase):
 
         self.assertEqual(result[0], "Package Manager error")
         context = fake.storage.values["recovery.failureContext"]
+        self.assertEqual(context["schemaVersion"], 1)
         self.assertEqual(context["source"], "pacstrap")
         self.assertEqual(context["stage"], "repository-metadata")
+        self.assertEqual(context["category"], "mirror-out-of-sync")
+        self.assertEqual(context["reasonCode"], "pacstrap.repository-metadata.mirror-out-of-sync")
         self.assertEqual(context["command"], "pacman -Slq")
         self.assertEqual(context["exitCode"], 1)
         self.assertIn("404", context["output"])
@@ -154,8 +159,11 @@ class RecoveryFailureContextTests(unittest.TestCase):
         )
 
         context = fake.storage.values["recovery.failureContext"]
+        self.assertEqual(context["schemaVersion"], 1)
         self.assertEqual(context["source"], "pacman")
         self.assertEqual(context["stage"], "package-install")
+        self.assertEqual(context["category"], "dns-failure")
+        self.assertEqual(context["reasonCode"], "pacman.package-install.dns-failure")
         self.assertEqual(context["command"], "pacman -S linux")
         self.assertIn("retrying mirror", context["output"])
         self.assertIn("Could not resolve host", context["output"])
@@ -352,6 +360,47 @@ class RecoveryFailureContextTests(unittest.TestCase):
         self.assertIn("required keyring is missing", result.stderr)
         self.assertFalse(log.exists())
 
+    def test_pacstrap_configuration_failure_records_structured_context(self) -> None:
+        fake = FakeCalamares()
+        registry_error = type("RegistryError", (Exception,), {})
+        module = load_module(
+            "catos_test_pacstrap_configuration_failure",
+            "usr/lib/calamares/modules/pacstrap/main.py",
+            fake,
+            {
+                "pkgcheck": module_stub("pkgcheck"),
+                "pacstrap_repository": module_stub(
+                    "pacstrap_repository",
+                    CACHYOS_SELECTION="cachyos",
+                    install_repository_config=lambda *_args, **_kwargs: None,
+                    pacman_config_for=lambda *_args, **_kwargs: "/missing/pacman.conf",
+                    transform_packages=lambda packages, _selection: packages,
+                ),
+                "secureboot": module_stub("secureboot", secure_boot_enabled=lambda: False),
+                "registry": module_stub(
+                    "registry",
+                    RegistryError=registry_error,
+                    load_bootloader_registry=lambda: {},
+                    missing_required_packages=lambda *_args: [],
+                    package_plan=lambda *_args, **_kwargs: [],
+                ),
+            },
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            fake.storage.insert("rootMountPoint", temporary)
+            fake.storage.insert("packagechooser_repository", "catos")
+            fake.module.job.configuration = {"basePackages": ["base"]}
+
+            result = module.run()
+
+        self.assertEqual(result[0], "Repository configuration missing")
+        context = fake.storage.values["recovery.failureContext"]
+        self.assertEqual(context["category"], "repository-configuration")
+        self.assertEqual(
+            context["reasonCode"],
+            "pacstrap.repository-configuration.pacman-config-missing",
+        )
+
     def test_pacstrap_sync_failure_stops_before_repository_query(self) -> None:
         fake = FakeCalamares()
         registry_error = type("RegistryError", (Exception,), {})
@@ -452,10 +501,44 @@ class RecoveryFailureContextTests(unittest.TestCase):
 
         self.assertEqual(result[0], "Boot setup failed")
         context = fake.storage.values["recovery.failureContext"]
+        self.assertEqual(context["schemaVersion"], 1)
         self.assertEqual(context["source"], "bootloadu")
         self.assertEqual(context["stage"], "install")
+        self.assertEqual(context["category"], "bootloader-failure")
+        self.assertEqual(context["reasonCode"], "bootloadu.install.bootloader-failure")
         self.assertEqual(context["provider"], "limine")
         self.assertIn("registry unavailable", context["details"])
+
+    def test_recovery_context_classifies_root_cause_before_component(self) -> None:
+        fake = FakeCalamares()
+        module = load_module(
+            "catos_test_recovery_context",
+            "usr/lib/calamares/modules/recovery_context.py",
+            fake,
+            {},
+        )
+
+        context = module.build_failure_context(
+            source="bootloadu",
+            stage="install",
+            summary="Boot setup failed",
+            details="固件工具失败",
+            output="efibootmgr: No space left on device",
+        )
+
+        self.assertEqual(context["schemaVersion"], 1)
+        self.assertEqual(context["category"], "storage-full")
+        self.assertEqual(context["reasonCode"], "bootloadu.install.storage-full")
+
+    def test_partition_exec_is_inside_bootstrap_recovery_region(self) -> None:
+        settings = yaml.safe_load(
+            (ROOT / "usr/share/calamares-advanced/settings.conf").read_text(encoding="utf-8")
+        )
+        exec_regions = [entry["exec"] for entry in settings["sequence"] if "exec" in entry]
+        bootstrap = next(region for region in exec_regions if "recovery@bootstrap" in region)
+
+        self.assertEqual(bootstrap[0:3], ["recovery@bootstrap", "partition", "mount"])
+        self.assertFalse(any(region == ["partition"] for region in exec_regions))
 
     def test_bootloader_command_failure_preserves_real_output(self) -> None:
         fake = FakeCalamares()

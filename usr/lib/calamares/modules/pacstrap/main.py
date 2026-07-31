@@ -7,13 +7,17 @@ import subprocess
 import shutil
 import time
 import gettext
+from pathlib import Path
 
 import libcalamares
 from libcalamares.utils import gettext_path, gettext_languages
 
-# Ensure local helper module is importable (pkgcheck.py in same directory)
-sys.path.insert(0, "/usr/lib/calamares/modules/pacstrap")
-sys.path.insert(0, "/usr/lib/calamares/modules/bootloadu")
+# Ensure installer helper modules are importable both installed and from tests.
+MODULE_DIR = Path(__file__).resolve().parent
+MODULES_DIR = MODULE_DIR.parent
+for path in (MODULE_DIR, MODULES_DIR / "bootloadu", MODULES_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 import pkgcheck  # noqa: E402
 from pacstrap_repository import (  # noqa: E402
     CACHYOS_SELECTION,
@@ -22,6 +26,7 @@ from pacstrap_repository import (  # noqa: E402
     transform_packages,
 )
 from secureboot import secure_boot_enabled as host_secure_boot_enabled  # noqa: E402
+from recovery_context import build_failure_context  # noqa: E402
 from registry import (  # noqa: E402
     RegistryError,
     load_bootloader_registry,
@@ -57,32 +62,23 @@ class PacmanError(Exception):
         return str(self.message)
 
 
-def _command_text(command):
-    if isinstance(command, (list, tuple)):
-        return " ".join(str(part) for part in command)
-    return str(command or "")
-
-
-def _failure(summary, details, stage, error=None, output=None):
-    context = {
-        "source": "pacstrap",
-        "stage": stage,
-        "summary": str(summary),
-        "details": str(details),
-    }
-    command = getattr(error, "cmd", None)
-    if command:
-        context["command"] = _command_text(command)
-    returncode = getattr(error, "returncode", None)
-    if returncode is not None:
-        context["exitCode"] = int(returncode)
+def _failure(summary, details, stage, error=None, output=None, category=None, reason_code=None):
     captured = output
     if captured is None and error is not None:
         captured = getattr(error, "output", None)
     if captured is None:
         captured = "\n".join(recent_output)
-    if captured:
-        context["output"] = str(captured)
+    context = build_failure_context(
+        source="pacstrap",
+        stage=stage,
+        summary=str(summary),
+        details=str(details),
+        command=getattr(error, "cmd", None),
+        exit_code=getattr(error, "returncode", None),
+        output=str(captured or ""),
+        category=category,
+        reason_code=reason_code,
+    )
     libcalamares.globalstorage.insert("recovery.failureContext", context)
     return summary, details
 
@@ -117,12 +113,15 @@ def line_cb(line: str):
 
 
 def run_in_host(command, line_func):
+    environment = os.environ.copy()
+    environment.update({"LC_ALL": "C", "LANG": "C"})
     proc = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
         bufsize=1,
+        env=environment,
     )
     for line in proc.stdout:
         if line.strip():
@@ -140,12 +139,15 @@ def _host_capture_lines(command):
     """
     Run command on host and capture stdout lines. Raises PacmanError on failure.
     """
+    environment = os.environ.copy()
+    environment.update({"LC_ALL": "C", "LANG": "C"})
     proc = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
         bufsize=1,
+        env=environment,
     )
     lines = []
     for line in proc.stdout:
@@ -222,31 +224,61 @@ def run():
     root_mount_point = libcalamares.globalstorage.value("rootMountPoint")
 
     if not root_mount_point:
-        return (
+        return _failure(
             "No mount point for root partition in globalstorage",
             'globalstorage does not contain a "rootMountPoint" key, doing nothing',
+            "target-root",
+            category="unknown",
+            reason_code="pacstrap.target-root.missing",
         )
 
     if not os.path.exists(root_mount_point):
-        return (
+        return _failure(
             "Bad mount point for root partition in globalstorage",
             'globalstorage["rootMountPoint"] is "{}", which does not exist, doing nothing'.format(
                 root_mount_point
             ),
+            "target-root",
+            category="unknown",
+            reason_code="pacstrap.target-root.unavailable",
         )
 
     if not libcalamares.job.configuration:
-        return "No configuration found", "Aborting due to missing configuration"
+        return _failure(
+            "No configuration found",
+            "Aborting due to missing configuration",
+            "module-configuration",
+            category="unknown",
+            reason_code="pacstrap.module-configuration.missing",
+        )
 
     if "basePackages" not in libcalamares.job.configuration:
-        return "Package List Missing", "Cannot continue without list of packages to install"
+        return _failure(
+            "Package List Missing",
+            "Cannot continue without list of packages to install",
+            "module-configuration",
+            category="unknown",
+            reason_code="pacstrap.module-configuration.base-packages-missing",
+        )
 
     configured_packages = libcalamares.job.configuration["basePackages"]
     if not isinstance(configured_packages, list):
-        return "Bad configuration", "basePackages must be a list"
+        return _failure(
+            "Bad configuration",
+            "basePackages must be a list",
+            "module-configuration",
+            category="unknown",
+            reason_code="pacstrap.module-configuration.base-packages-invalid",
+        )
     configured_required = libcalamares.job.configuration.get("requiredPackages", [])
     if not isinstance(configured_required, list):
-        return "Bad configuration", "requiredPackages must be a list"
+        return _failure(
+            "Bad configuration",
+            "requiredPackages must be a list",
+            "module-configuration",
+            category="unknown",
+            reason_code="pacstrap.module-configuration.required-packages-invalid",
+        )
     base_packages = list(configured_packages)
     required_packages = list(configured_required)
     base_packages.extend(required_packages)
@@ -255,15 +287,21 @@ def run():
         libcalamares.globalstorage.value("packagechooser_repository") or "catos"
     )
     if repository_selection not in {"catos", CACHYOS_SELECTION}:
-        return (
+        return _failure(
             "Invalid repository selection",
             f"Unsupported repository selection: {repository_selection}",
+            "repository-configuration",
+            category="repository-configuration",
+            reason_code="pacstrap.repository-configuration.selection-invalid",
         )
     pacman_config = pacman_config_for(repository_selection)
     if not os.path.isfile(pacman_config):
-        return (
+        return _failure(
             "Repository configuration missing",
             f"Required pacman configuration does not exist: {pacman_config}",
+            "repository-configuration",
+            category="repository-configuration",
+            reason_code="pacstrap.repository-configuration.pacman-config-missing",
         )
 
     bootloader = (
@@ -293,7 +331,14 @@ def run():
         boot_packages = transform_packages(boot_packages, repository_selection)
         base_packages.extend(boot_packages)
     except RegistryError as error:
-        return "Invalid boot configuration", str(error)
+        return _failure(
+            "Invalid boot configuration",
+            str(error),
+            "boot-package-plan",
+            error=error,
+            category="unknown",
+            reason_code="pacstrap.boot-package-plan.invalid",
+        )
 
     base_packages = transform_packages(base_packages, repository_selection)
     base_packages = list(dict.fromkeys(base_packages))
@@ -408,7 +453,13 @@ def run():
     }
     for key, value in copy_groups.items():
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            return "Bad configuration", f"{key} must be a list of file paths"
+            return _failure(
+                "Bad configuration",
+                f"{key} must be a list of file paths",
+                "module-configuration",
+                category="unknown",
+                reason_code="pacstrap.module-configuration.post-install-files-invalid",
+            )
 
     required_files = set(copy_groups["requiredPostInstallFiles"])
     required_executables = set(copy_groups["requiredPostInstallExecutables"])
@@ -431,14 +482,23 @@ def run():
         if not os.path.isfile(source_file):
             message = f"Installer file is missing: {source_file}"
             if is_required:
-                return "Required installer file missing", message
+                return _failure(
+                    "Required installer file missing",
+                    message,
+                    "post-install-files",
+                    category="unknown",
+                    reason_code="pacstrap.post-install-files.required-file-missing",
+                )
             libcalamares.utils.warning(message)
             continue
 
         if source_file in required_executables and not os.access(source_file, os.X_OK):
-            return (
+            return _failure(
                 "Required installer helper is not executable",
                 f"Installer helper is not executable: {source_file}",
+                "post-install-files",
+                category="unknown",
+                reason_code="pacstrap.post-install-files.source-not-executable",
             )
 
         try:
@@ -449,14 +509,24 @@ def run():
         except Exception as error:
             message = f"Failed to copy installer file {source_file}: {error!s}"
             if is_required:
-                return "Failed to copy required installer file", message
+                return _failure(
+                    "Failed to copy required installer file",
+                    message,
+                    "post-install-files",
+                    error=error,
+                    category="unknown",
+                    reason_code="pacstrap.post-install-files.copy-failed",
+                )
             libcalamares.utils.warning(message)
             continue
 
         if source_file in required_executables and not os.access(dest, os.X_OK):
-            return (
+            return _failure(
                 "Required installer helper lost executable permissions",
                 f"Copied installer helper is not executable: {dest}",
+                "post-install-files",
+                category="unknown",
+                reason_code="pacstrap.post-install-files.target-not-executable",
             )
 
     libcalamares.globalstorage.insert("online", True)

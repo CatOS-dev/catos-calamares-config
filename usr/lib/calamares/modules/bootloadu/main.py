@@ -9,11 +9,14 @@ import sys
 import libcalamares
 
 MODULE_DIR = Path(__file__).resolve().parent
-if str(MODULE_DIR) not in sys.path:
-    sys.path.insert(0, str(MODULE_DIR))
+MODULES_DIR = MODULE_DIR.parent
+for path in (MODULE_DIR, MODULES_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 from context import BootContext, ContextError  # noqa: E402
 from providers import PROVIDERS  # noqa: E402
+from recovery_context import build_failure_context  # noqa: E402
 from providers.base import BootloaduError, configure_mkinitcpio  # noqa: E402
 from registry import RegistryError, install_marker, load_bootloader_registry, platform_supported, provider_profile  # noqa: E402
 from secureboot import enable_target_secure_boot, prepare_secure_boot  # noqa: E402
@@ -81,22 +84,17 @@ def run():
         return None
     except (BootloaduError, ContextError, RegistryError, OSError, ValueError) as error:
         libcalamares.utils.error(f"bootloadu: {error}")
-        failure_context = {
-            "source": "bootloadu",
-            "stage": phase,
-            "summary": _("Boot setup failed"),
-            "details": str(error),
-            "provider": provider_id,
-        }
         command = getattr(error, "command", None)
-        if command:
-            failure_context["command"] = shlex.join(command)
-        returncode = getattr(error, "returncode", None)
-        if returncode is not None:
-            failure_context["exitCode"] = returncode
-        output = getattr(error, "output", "")
-        if output:
-            failure_context["output"] = output
+        failure_context = build_failure_context(
+            source="bootloadu",
+            stage=phase,
+            summary=_("Boot setup failed"),
+            details=str(error),
+            command=shlex.join(command) if command else None,
+            exit_code=getattr(error, "returncode", None),
+            output=getattr(error, "output", ""),
+            provider=provider_id,
+        )
         libcalamares.globalstorage.insert(
             "recovery.failureContext",
             failure_context,
