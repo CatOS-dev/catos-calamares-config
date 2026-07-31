@@ -5,7 +5,7 @@ from typing import Any
 
 import yaml
 
-DEFAULT_REGISTRY_PATH = Path("/usr/share/calamares/catos/bootloaders.yaml")
+DEFAULT_REGISTRY_PATH = Path("/usr/share/calamares-advanced/modules/bootloaders.yaml")
 
 
 class RegistryError(RuntimeError):

@@ -31,7 +31,7 @@ def pretty_name():
 
 def run():
     try:
-        registry_path = libcalamares.job.configuration.get("registry", "/usr/share/calamares/catos/bootloaders.yaml")
+        registry_path = libcalamares.job.configuration.get("registry", "/usr/share/calamares-advanced/modules/bootloaders.yaml")
         registry = load_bootloader_registry(registry_path)
         context = BootContext.from_global_storage(
             libcalamares.globalstorage,

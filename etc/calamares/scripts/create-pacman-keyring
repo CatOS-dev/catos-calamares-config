@@ -4,7 +4,7 @@ exec 2>&1
 
 set -u
 
-CACHYOS_KEY_FILE="${CACHYOS_KEY_FILE:-/usr/share/calamares/catos-keys/cachyos.asc}"
+CACHYOS_KEY_FILE="${CACHYOS_KEY_FILE:-/usr/share/calamares-advanced/modules/cachyos.asc}"
 GPG_DIR="$(pacman-conf GPGDir 2>/dev/null || printf '%s\n' /etc/pacman.d/gnupg)"
 
 cleanup_keyring_daemons() {
