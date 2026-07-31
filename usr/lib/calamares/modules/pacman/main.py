@@ -123,6 +123,16 @@ def _run_script(script):
         check_target_env_call(script.split(" "))
 
 
+def _failure(summary, description, error):
+    details = "{}\nCommand: {}\nExit code: {}".format(
+        description,
+        getattr(error, "cmd", "unknown"),
+        getattr(error, "returncode", "unknown"),
+    )
+    libcalamares.globalstorage.insert("recovery.pacmanFailure", details)
+    return summary, details
+
+
 # --- Pacman backend only ---
 class PacmanManager:
     backend = "pacman"
@@ -313,13 +323,10 @@ def run():
             libcalamares.utils.warning(str(e))
             libcalamares.utils.debug("stdout:" + str(getattr(e, "stdout", "")))
             libcalamares.utils.debug("stderr:" + str(getattr(e, "stderr", "")))
-            return (
+            return _failure(
                 _("Package Manager error"),
-                _(
-                    "The package manager could not make changes to the installed system.\n"
-                    "Command: <pre>{!s}</pre>\n"
-                    "Exit code: {!s}\n"
-                ).format(e.cmd, e.returncode),
+                _("The package manager could not make changes to the installed system."),
+                e,
             )
 
     update_system = libcalamares.job.configuration.get("update_system", False)
@@ -330,11 +337,10 @@ def run():
             libcalamares.utils.warning(str(e))
             libcalamares.utils.debug("stdout:" + str(getattr(e, "stdout", "")))
             libcalamares.utils.debug("stderr:" + str(getattr(e, "stderr", "")))
-            return (
+            return _failure(
                 _("Package Manager error"),
-                _(
-                    "The package manager could not update the system. The command <pre>{!s}</pre> returned error code {!s}."
-                ).format(e.cmd, e.returncode),
+                _("The package manager could not update the system."),
+                e,
             )
 
     operations = libcalamares.job.configuration.get("operations", [])
@@ -363,11 +369,10 @@ def run():
         libcalamares.utils.warning(str(e))
         libcalamares.utils.debug("stdout:" + str(getattr(e, "stdout", "")))
         libcalamares.utils.debug("stderr:" + str(getattr(e, "stderr", "")))
-        return (
+        return _failure(
             _("Repository metadata query failed"),
-            _(
-                "The package manager could not query repository metadata. The command <pre>{!s}</pre> returned error code {!s}."
-            ).format(e.cmd, e.returncode),
+            _("The package manager could not query repository metadata."),
+            e,
         )
 
     mode_packages = None
@@ -389,11 +394,10 @@ def run():
             libcalamares.utils.warning(str(e))
             libcalamares.utils.debug("stdout:" + str(getattr(e, "stdout", "")))
             libcalamares.utils.debug("stderr:" + str(getattr(e, "stderr", "")))
-            return (
+            return _failure(
                 _("Package Manager error"),
-                _(
-                    "The package manager could not make changes to the installed system. The command <pre>{!s}</pre> returned error code {!s}."
-                ).format(e.cmd, e.returncode),
+                _("The package manager could not make changes to the installed system."),
+                e,
             )
 
     mode_packages = None
