@@ -79,10 +79,12 @@ def run():
 
     try:
         run_in_host(shell_command, line_cb)
-    except subprocess.CalledProcessError as cpe:
-        return "Failed to run chwd", "chwd failed with error {!s}".format(cpe.stderr)
-    except HostError as host_err:
-        return "Failed to run chwd", format(host_err)
+    except (subprocess.CalledProcessError, HostError, OSError) as error:
+        libcalamares.utils.warning(
+            "chwd failed; continuing without automatic driver configuration: {!s}".format(error)
+        )
+        libcalamares.job.setprogress(1.0)
+        return None
 
     libcalamares.job.setprogress(1.0)
 
