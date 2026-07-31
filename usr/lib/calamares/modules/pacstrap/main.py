@@ -47,11 +47,44 @@ recent_output = []
 class PacmanError(Exception):
     """Raised when host-side pacman/pacstrap returns non-zero."""
 
-    def __init__(self, message):
+    def __init__(self, message, command=None, returncode=None, output=None):
         self.message = message
+        self.cmd = command
+        self.returncode = returncode
+        self.output = output
 
     def __str__(self):
         return str(self.message)
+
+
+def _command_text(command):
+    if isinstance(command, (list, tuple)):
+        return " ".join(str(part) for part in command)
+    return str(command or "")
+
+
+def _failure(summary, details, stage, error=None, output=None):
+    context = {
+        "source": "pacstrap",
+        "stage": stage,
+        "summary": str(summary),
+        "details": str(details),
+    }
+    command = getattr(error, "cmd", None)
+    if command:
+        context["command"] = _command_text(command)
+    returncode = getattr(error, "returncode", None)
+    if returncode is not None:
+        context["exitCode"] = int(returncode)
+    captured = output
+    if captured is None and error is not None:
+        captured = getattr(error, "output", None)
+    if captured is None:
+        captured = "\n".join(recent_output)
+    if captured:
+        context["output"] = str(captured)
+    libcalamares.globalstorage.insert("recovery.failureContext", context)
+    return summary, details
 
 
 def pretty_name():
@@ -96,7 +129,11 @@ def run_in_host(command, line_func):
             line_func(line)
     proc.wait()
     if proc.returncode != 0:
-        raise PacmanError(f"Failed to run: {' '.join(command)} (rc={proc.returncode})")
+        raise PacmanError(
+            f"Failed to run: {' '.join(command)} (rc={proc.returncode})",
+            command=command,
+            returncode=proc.returncode,
+        )
 
 
 def _host_capture_lines(command):
@@ -116,7 +153,12 @@ def _host_capture_lines(command):
             lines.append(line.rstrip("\n"))
     proc.wait()
     if proc.returncode != 0:
-        raise PacmanError(f"Failed to query: {' '.join(command)} (rc={proc.returncode})")
+        raise PacmanError(
+            f"Failed to query: {' '.join(command)} (rc={proc.returncode})",
+            command=command,
+            returncode=proc.returncode,
+            output="\n".join(lines),
+        )
     return [l for l in lines if l]
 
 
@@ -275,9 +317,11 @@ def run():
             required_install_packages, repo_pkgs, repo_groups
         )
         if missing_install_packages:
-            return (
+            details = "Missing required packages: " + ", ".join(missing_install_packages)
+            return _failure(
                 "Required installation packages are unavailable",
-                "Missing required packages: " + ", ".join(missing_install_packages),
+                details,
+                "repository-metadata",
             )
         base_packages = pkgcheck.filter_operation_list(
             "basePackages",
@@ -287,10 +331,20 @@ def run():
         )
     except PacmanError as e:
         libcalamares.utils.warning(str(e))
-        return "Package Manager error", "Could not query repository metadata for base system install"
+        return _failure(
+            "Package Manager error",
+            "Could not query repository metadata for base system install",
+            "repository-metadata",
+            error=e,
+        )
     except Exception as e:
         libcalamares.utils.warning(f"pkgcheck failed: {e!s}")
-        return "Package Manager error", "pkgcheck failed while preparing base system package list"
+        return _failure(
+            "Package Manager error",
+            "pkgcheck failed while preparing base system package list",
+            "repository-metadata",
+            error=e,
+        )
 
     if not base_packages:
         libcalamares.utils.warning("All basePackages were filtered out (missing). Skipping pacstrap.")
@@ -311,17 +365,28 @@ def run():
         run_in_host(pacstrap_command, line_cb)
     except PacmanError as pe:
         details = f"{pe}\nLast pacstrap output:\n" + "\n".join(recent_output)
-        libcalamares.globalstorage.insert("recovery.pacstrapFailure", details)
-        return "Failed to run pacstrap", details
+        return _failure(
+            "Failed to run pacstrap",
+            details,
+            "base-system-install",
+            error=pe,
+        )
     except Exception as e:
-        return "Failed to run pacstrap", f"pacstrap failed: {e!s}"
+        return _failure(
+            "Failed to run pacstrap",
+            f"pacstrap failed: {e!s}",
+            "base-system-install",
+            error=e,
+        )
 
     try:
         install_repository_config(root_mount_point, repository_selection)
     except Exception as error:
-        return (
+        return _failure(
             "Failed to install repository configuration",
             f"Could not copy pacman configuration into target: {error!s}",
+            "repository-configuration",
+            error=error,
         )
 
     # --- copy files post install ---

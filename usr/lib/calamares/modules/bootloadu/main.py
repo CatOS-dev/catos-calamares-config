@@ -30,6 +30,8 @@ def pretty_name():
 
 
 def run():
+    phase = str(libcalamares.job.configuration.get("phase", "install"))
+    provider_id = str(libcalamares.globalstorage.value("bootloader.selected") or "")
     try:
         registry_path = libcalamares.job.configuration.get("registry", "/usr/share/calamares-advanced/modules/bootloaders.yaml")
         registry = load_bootloader_registry(registry_path)
@@ -38,7 +40,8 @@ def run():
             libcalamares.job.configuration,
             registry.get("defaultProvider", "grub"),
         )
-        phase = libcalamares.job.configuration.get("phase", "install")
+        phase = str(libcalamares.job.configuration.get("phase", "install"))
+        provider_id = context.provider_id
         if phase == "secureboot":
             enable_target_secure_boot(libcalamares.globalstorage, registry, context)
             libcalamares.job.setprogress(1.0)
@@ -77,4 +80,14 @@ def run():
         return None
     except (BootloaduError, ContextError, RegistryError, OSError, ValueError) as error:
         libcalamares.utils.error(f"bootloadu: {error}")
+        libcalamares.globalstorage.insert(
+            "recovery.failureContext",
+            {
+                "source": "bootloadu",
+                "stage": phase,
+                "summary": _("Boot setup failed"),
+                "details": str(error),
+                "provider": provider_id,
+            },
+        )
         return _("Boot setup failed"), str(error)

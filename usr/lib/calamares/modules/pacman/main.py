@@ -38,6 +38,7 @@ completed_packages = 0
 group_packages = 0
 
 custom_status_message = None
+recent_output = []
 
 INSTALL = object()
 REMOVE = object()
@@ -123,13 +124,79 @@ def _run_script(script):
         check_target_env_call(script.split(" "))
 
 
-def _failure(summary, description, error):
+def _keyring_populate_command(keyrings, keyring_dir="/usr/share/pacman/keyrings"):
+    return [
+        "/bin/sh",
+        "-c",
+        """
+set -eu
+keyring_dir="$1"
+shift
+available=""
+for keyring in "$@"; do
+    if [ -f "${keyring_dir}/${keyring}.gpg" ]; then
+        available="${available} ${keyring}"
+    fi
+done
+[ -z "$available" ] || pacman-key --populate $available
+""",
+        "catos-keyring-refresh",
+        keyring_dir,
+        *keyrings,
+    ]
+
+
+def _refresh_target_keyring():
+    """Reconcile only the keyrings approved by the selected repository profile."""
+    keyrings = ["archlinux", "catos", "arch4edu", "archlinuxcn"]
+    if libcalamares.globalstorage.value("packagechooser_repository") == "cachyos":
+        keyrings.append("cachyos")
+
+    check_target_env_call(["pacman-key", "--init"])
+    check_target_env_call(_keyring_populate_command(keyrings))
+
+
+def _command_text(command):
+    if isinstance(command, (list, tuple)):
+        return " ".join(str(part) for part in command)
+    return str(command or "")
+
+
+def _text_output(value):
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _failure(summary, description, error, stage):
+    command = getattr(error, "cmd", None)
+    returncode = getattr(error, "returncode", None)
+    outputs = list(recent_output)
+    for attribute in ("stdout", "stderr", "output"):
+        captured = _text_output(getattr(error, attribute, None)).strip()
+        if captured and captured not in outputs:
+            outputs.append(captured)
+    output = "\n".join(outputs[-200:])
     details = "{}\nCommand: {}\nExit code: {}".format(
         description,
-        getattr(error, "cmd", "unknown"),
-        getattr(error, "returncode", "unknown"),
+        _command_text(command) or "unknown",
+        returncode if returncode is not None else "unknown",
     )
-    libcalamares.globalstorage.insert("recovery.pacmanFailure", details)
+    if output:
+        details += "\nLast pacman output:\n" + output
+    context = {
+        "source": "pacman",
+        "stage": stage,
+        "summary": str(summary),
+        "details": str(description),
+        "command": _command_text(command),
+        "output": output,
+    }
+    if returncode is not None:
+        context["exitCode"] = int(returncode)
+    libcalamares.globalstorage.insert("recovery.failureContext", context)
     return summary, details
 
 
@@ -156,7 +223,10 @@ class PacmanManager:
         def line_cb(line: str):
             # Minimal pacman output handling (no spy / experimental hooks)
             global custom_status_message
+            global recent_output
 
+            recent_output.append(line.rstrip())
+            recent_output[:] = recent_output[-200:]
             if line.startswith(":: "):
                 self.in_package_changes = ("package" in line) or ("hooks" in line)
             else:
@@ -301,7 +371,9 @@ def run_operations(pkgman: PacmanManager, entry: dict):
 
 
 def run():
-    global mode_packages, total_packages, completed_packages, group_packages, custom_status_message
+    global mode_packages, total_packages, completed_packages, group_packages, custom_status_message, recent_output
+
+    recent_output.clear()
 
     # pacman-only: optional guard (if someone misconfigures)
     backend = libcalamares.job.configuration.get("backend", "pacman")
@@ -315,7 +387,21 @@ def run():
 
     pkgman = PacmanManager()
 
-    update_db = libcalamares.job.configuration.get("update_db", False)
+    try:
+        _refresh_target_keyring()
+    except Exception as e:
+        libcalamares.utils.warning(f"target keyring refresh failed: {e!s}")
+        return _failure(
+            _("Package signing key setup failed"),
+            _("The target package keyring could not be initialized or populated."),
+            e,
+            "keyring",
+        )
+
+    recovery_refresh = bool(libcalamares.globalstorage.value("recovery.refreshRepositories"))
+    update_db = libcalamares.job.configuration.get("update_db", False) or recovery_refresh
+    update_system = libcalamares.job.configuration.get("update_system", False) or recovery_refresh
+
     if update_db and libcalamares.globalstorage.value("hasInternet"):
         try:
             pkgman.update_db()
@@ -327,9 +413,9 @@ def run():
                 _("Package Manager error"),
                 _("The package manager could not make changes to the installed system."),
                 e,
+                "repository-database-sync",
             )
 
-    update_system = libcalamares.job.configuration.get("update_system", False)
     if update_system and libcalamares.globalstorage.value("hasInternet"):
         try:
             pkgman.update_system()
@@ -341,7 +427,11 @@ def run():
                 _("Package Manager error"),
                 _("The package manager could not update the system."),
                 e,
+                "system-update",
             )
+
+    if recovery_refresh and libcalamares.globalstorage.value("hasInternet"):
+        libcalamares.globalstorage.remove("recovery.refreshRepositories")
 
     operations = libcalamares.job.configuration.get("operations", [])
     if libcalamares.globalstorage.contains("packageOperations"):
@@ -373,6 +463,7 @@ def run():
             _("Repository metadata query failed"),
             _("The package manager could not query repository metadata."),
             e,
+            "repository-metadata",
         )
 
     mode_packages = None
@@ -398,6 +489,7 @@ def run():
                 _("Package Manager error"),
                 _("The package manager could not make changes to the installed system."),
                 e,
+                "package-install",
             )
 
     mode_packages = None
