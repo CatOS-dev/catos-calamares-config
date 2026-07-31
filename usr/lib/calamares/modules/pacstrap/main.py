@@ -41,6 +41,7 @@ _n = _translation.ngettext
 
 custom_status_message = None
 status_update_time = 0
+recent_output = []
 
 
 class PacmanError(Exception):
@@ -69,8 +70,11 @@ def line_cb(line: str):
     """
     global custom_status_message
     global status_update_time
+    global recent_output
 
     custom_status_message = line.strip()
+    recent_output.append(line.rstrip())
+    recent_output = recent_output[-200:]
     libcalamares.utils.debug("pacstrap: " + line.strip())
 
     # Throttle UI updates a bit
@@ -298,7 +302,9 @@ def run():
     try:
         run_in_host(pacstrap_command, line_cb)
     except PacmanError as pe:
-        return "Failed to run pacstrap", format(pe)
+        details = f"{pe}\nLast pacstrap output:\n" + "\n".join(recent_output)
+        libcalamares.globalstorage.insert("recovery.pacstrapFailure", details)
+        return "Failed to run pacstrap", details
     except Exception as e:
         return "Failed to run pacstrap", f"pacstrap failed: {e!s}"
 
