@@ -189,7 +189,7 @@ def _text_output(value):
     return str(value)
 
 
-def _failure(summary, description, error, stage):
+def _failure(summary, description, error):
     command = getattr(error, "cmd", None)
     returncode = getattr(error, "returncode", None)
     outputs = list(recent_output)
@@ -675,7 +675,6 @@ def run():
                 _("Package signing key setup failed"),
                 _("The target package keyring could not be initialized or populated."),
                 e,
-                "keyring",
             )
 
     if update_db and has_internet:
@@ -689,7 +688,6 @@ def run():
                 _("Package Manager error"),
                 _("The package manager could not make changes to the installed system."),
                 e,
-                "repository-database-sync",
             )
 
     if update_system and has_internet:
@@ -703,7 +701,6 @@ def run():
                 _("Package Manager error"),
                 _("The package manager could not update the system."),
                 e,
-                "system-update",
             )
 
     # --- preprocess package lists (drop missing pkgs/groups) ---
@@ -723,7 +720,6 @@ def run():
             _("Repository metadata query failed"),
             _("The package manager could not query repository metadata."),
             e,
-            "repository-metadata",
         )
 
     mode_packages = None
@@ -751,7 +747,6 @@ def run():
                 _("Package Manager error"),
                 _("The package manager could not make changes to the installed system."),
                 e,
-                "package-install",
             )
 
     mode_packages = None

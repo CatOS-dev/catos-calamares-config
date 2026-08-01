@@ -120,7 +120,6 @@ class PackageOutputTests(unittest.TestCase):
         result = module._failure(
             "Package Manager error",
             "Could not query repository metadata",
-            "repository-metadata",
             error=error,
         )
 
@@ -149,7 +148,6 @@ class PackageOutputTests(unittest.TestCase):
             "Package Manager error",
             "Package installation failed",
             error,
-            "package-install",
         )
 
         self.assertIn("Command: pacman -S linux", result[1])
@@ -734,7 +732,6 @@ class PackageOutputTests(unittest.TestCase):
                 "Package Manager error",
                 "Package installation failed",
                 error,
-                "package-install",
             )
 
         self.assertNotIn("old.example", result[1])

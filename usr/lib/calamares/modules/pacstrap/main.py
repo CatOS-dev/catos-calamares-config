@@ -75,8 +75,7 @@ class PacmanError(Exception):
         return str(self.message)
 
 
-def _failure(summary, details, stage, error=None, output=None, category=None, reason_code=None):
-    del stage, category, reason_code
+def _failure(summary, details, error=None, output=None):
     captured = output
     if captured is None and error is not None:
         captured = getattr(error, "output", None)
@@ -384,9 +383,6 @@ def run():
         return _failure(
             _("No mount point for root partition in globalstorage"),
             _('globalstorage does not contain a "rootMountPoint" key, doing nothing'),
-            "target-root",
-            category="unknown",
-            reason_code="pacstrap.target-root.missing",
         )
 
     if not os.path.exists(root_mount_point):
@@ -395,27 +391,18 @@ def run():
             _('globalstorage["rootMountPoint"] is "{root}", which does not exist, doing nothing').format(
                 root=root_mount_point
             ),
-            "target-root",
-            category="unknown",
-            reason_code="pacstrap.target-root.unavailable",
         )
 
     if not libcalamares.job.configuration:
         return _failure(
             _("No configuration found"),
             _("Aborting due to missing configuration"),
-            "module-configuration",
-            category="unknown",
-            reason_code="pacstrap.module-configuration.missing",
         )
 
     if "basePackages" not in libcalamares.job.configuration:
         return _failure(
             _("Package List Missing"),
             _("Cannot continue without list of packages to install"),
-            "module-configuration",
-            category="unknown",
-            reason_code="pacstrap.module-configuration.base-packages-missing",
         )
 
     configured_packages = libcalamares.job.configuration["basePackages"]
@@ -423,18 +410,12 @@ def run():
         return _failure(
             _("Bad configuration"),
             _("basePackages must be a list"),
-            "module-configuration",
-            category="unknown",
-            reason_code="pacstrap.module-configuration.base-packages-invalid",
         )
     configured_required = libcalamares.job.configuration.get("requiredPackages", [])
     if not isinstance(configured_required, list):
         return _failure(
             _("Bad configuration"),
             _("requiredPackages must be a list"),
-            "module-configuration",
-            category="unknown",
-            reason_code="pacstrap.module-configuration.required-packages-invalid",
         )
     base_packages = list(configured_packages)
     required_packages = list(configured_required)
@@ -447,18 +428,12 @@ def run():
         return _failure(
             _("Invalid repository selection"),
             _("Unsupported repository selection: {repository}").format(repository=repository_selection),
-            "repository-configuration",
-            category="repository-configuration",
-            reason_code="pacstrap.repository-configuration.selection-invalid",
         )
     pacman_config = pacman_config_for(repository_selection)
     if not os.path.isfile(pacman_config):
         return _failure(
             _("Repository configuration missing"),
             _("Required pacman configuration does not exist: {path}").format(path=pacman_config),
-            "repository-configuration",
-            category="repository-configuration",
-            reason_code="pacstrap.repository-configuration.pacman-config-missing",
         )
 
     bootloader = (
@@ -491,10 +466,7 @@ def run():
         return _failure(
             _("Invalid boot configuration"),
             _("Bootloader package plan is invalid: {error}").format(error=error),
-            "boot-package-plan",
             error=error,
-            category="unknown",
-            reason_code="pacstrap.boot-package-plan.invalid",
         )
 
     base_packages = transform_packages(base_packages, repository_selection)
@@ -515,7 +487,6 @@ def run():
         return _failure(
             _("Package Manager error"),
             _("Could not refresh repository databases for base system installation"),
-            "repository-database-sync",
             error=e,
         )
 
@@ -532,7 +503,6 @@ def run():
             return _failure(
                 _("Required installation packages are unavailable"),
                 details,
-                "repository-metadata",
             )
         base_packages = pkgcheck.filter_operation_list(
             "basePackages",
@@ -545,7 +515,6 @@ def run():
         return _failure(
             _("Package Manager error"),
             _("Could not query repository metadata for base system install"),
-            "repository-metadata",
             error=e,
         )
     except Exception as e:
@@ -553,7 +522,6 @@ def run():
         return _failure(
             _("Package Manager error"),
             _("pkgcheck failed while preparing base system package list"),
-            "repository-metadata",
             error=e,
         )
 
@@ -621,14 +589,12 @@ def run():
         return _failure(
             _("Failed to run pacstrap"),
             details,
-            "base-system-install",
             error=pe,
         )
     except Exception as e:
         return _failure(
             _("Failed to run pacstrap"),
             _("pacstrap failed: {error}").format(error=e),
-            "base-system-install",
             error=e,
         )
 
@@ -640,7 +606,6 @@ def run():
         return _failure(
             _("Failed to install repository configuration"),
             _("Could not copy pacman configuration into target: {error}").format(error=error),
-            "repository-configuration",
             error=error,
         )
 
@@ -660,9 +625,6 @@ def run():
             return _failure(
                 _("Bad configuration"),
                 _("{key} must be a list of file paths").format(key=key),
-                "module-configuration",
-                category="unknown",
-                reason_code="pacstrap.module-configuration.post-install-files-invalid",
             )
 
     required_files = set(copy_groups["requiredPostInstallFiles"])
@@ -689,9 +651,6 @@ def run():
                 return _failure(
                     _("Required installer file missing"),
                     message,
-                    "post-install-files",
-                    category="unknown",
-                    reason_code="pacstrap.post-install-files.required-file-missing",
                 )
             libcalamares.utils.warning(message)
             continue
@@ -700,9 +659,6 @@ def run():
             return _failure(
                 _("Required installer helper is not executable"),
                 _("Installer helper is not executable: {path}").format(path=source_file),
-                "post-install-files",
-                category="unknown",
-                reason_code="pacstrap.post-install-files.source-not-executable",
             )
 
         try:
@@ -718,10 +674,7 @@ def run():
                 return _failure(
                     _("Failed to copy required installer file"),
                     message,
-                    "post-install-files",
                     error=error,
-                    category="unknown",
-                    reason_code="pacstrap.post-install-files.copy-failed",
                 )
             libcalamares.utils.warning(message)
             continue
@@ -730,9 +683,6 @@ def run():
             return _failure(
                 _("Required installer helper lost executable permissions"),
                 _("Copied installer helper is not executable: {path}").format(path=dest),
-                "post-install-files",
-                category="unknown",
-                reason_code="pacstrap.post-install-files.target-not-executable",
             )
 
     libcalamares.globalstorage.insert("online", True)
