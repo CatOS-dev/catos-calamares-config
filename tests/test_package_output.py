@@ -10,7 +10,6 @@ import sys
 import types
 import unittest
 
-import yaml
 from unittest import mock
 
 
@@ -84,7 +83,7 @@ def load_module(name: str, relative: str, fake: FakeCalamares, dependencies: dic
     return module
 
 
-class RecoveryFailureContextTests(unittest.TestCase):
+class PackageOutputTests(unittest.TestCase):
     def test_pacstrap_failure_preserves_command_and_output(self) -> None:
         fake = FakeCalamares()
         registry_error = type("RegistryError", (Exception,), {})
@@ -126,15 +125,9 @@ class RecoveryFailureContextTests(unittest.TestCase):
         )
 
         self.assertEqual(result[0], "Package Manager error")
-        context = fake.storage.values["recovery.failureContext"]
-        self.assertEqual(context["schemaVersion"], 1)
-        self.assertEqual(context["source"], "pacstrap")
-        self.assertEqual(context["stage"], "repository-metadata")
-        self.assertEqual(context["category"], "mirror-out-of-sync")
-        self.assertEqual(context["reasonCode"], "pacstrap.repository-metadata.mirror-out-of-sync")
-        self.assertEqual(context["command"], "pacman -Slq")
-        self.assertEqual(context["exitCode"], 1)
-        self.assertIn("404", context["output"])
+        self.assertIn("Command: pacman -Slq", result[1])
+        self.assertIn("Exit code: 1", result[1])
+        self.assertIn("404", result[1])
 
     def test_pacman_failure_includes_streamed_and_subprocess_output(self) -> None:
         fake = FakeCalamares()
@@ -152,22 +145,16 @@ class RecoveryFailureContextTests(unittest.TestCase):
             stderr="Could not resolve host: mirror.example",
         )
 
-        module._failure(
+        result = module._failure(
             "Package Manager error",
             "Package installation failed",
             error,
             "package-install",
         )
 
-        context = fake.storage.values["recovery.failureContext"]
-        self.assertEqual(context["schemaVersion"], 1)
-        self.assertEqual(context["source"], "pacman")
-        self.assertEqual(context["stage"], "package-install")
-        self.assertEqual(context["category"], "dns-failure")
-        self.assertEqual(context["reasonCode"], "pacman.package-install.dns-failure")
-        self.assertEqual(context["command"], "pacman -S linux")
-        self.assertIn("retrying mirror", context["output"])
-        self.assertIn("Could not resolve host", context["output"])
+        self.assertIn("Command: pacman -S linux", result[1])
+        self.assertIn("retrying mirror", result[1])
+        self.assertIn("Could not resolve host", result[1])
 
     def test_target_keyring_refresh_is_idempotent_reconciliation(self) -> None:
         fake = FakeCalamares()
@@ -280,88 +267,6 @@ class RecoveryFailureContextTests(unittest.TestCase):
 
         self.assertIsNone(module.run())
         keyring.assert_not_called()
-
-    def test_repository_recovery_performs_one_full_upgrade_before_package_work(self) -> None:
-        fake = FakeCalamares()
-        fake.storage.insert("hasInternet", True)
-        fake.storage.insert("recovery.refreshRepositories", True)
-        progresses: list[float] = []
-        fake.module.job.setprogress = progresses.append
-        fake.module.job.configuration = {
-            "backend": "pacman",
-            "skip_if_no_internet": False,
-            "update_db": False,
-            "update_system": False,
-            "operations": [],
-            "pacman": {},
-        }
-        pkgcheck = module_stub("pkgcheck")
-        pkgcheck.build_repo_index = lambda: (set(), set())
-        pkgcheck.preprocess_operations = lambda **_kwargs: ([], 0)
-        module = load_module(
-            "catos_test_pacman_refresh",
-            "usr/lib/calamares/modules/pacman/main.py",
-            fake,
-            {"pkgcheck": pkgcheck},
-        )
-        calls: list[str] = []
-
-        class FakePacmanManager:
-            def full_upgrade(self) -> None:
-                calls.append("full_upgrade")
-
-        module.PacmanManager = FakePacmanManager
-        module._refresh_target_keyring = lambda: calls.append("keyring")
-
-        result = module.run()
-
-        self.assertIsNone(result)
-        self.assertEqual(calls, ["keyring", "full_upgrade"])
-        self.assertNotIn("recovery.refreshRepositories", fake.storage.values)
-        self.assertEqual(progresses[-1], 1.0)
-
-    def test_failed_repository_refresh_keeps_flag_and_skips_package_work(self) -> None:
-        fake = FakeCalamares()
-        fake.storage.insert("hasInternet", True)
-        fake.storage.insert("recovery.refreshRepositories", True)
-        fake.module.job.configuration = {
-            "backend": "pacman",
-            "skip_if_no_internet": False,
-            "update_db": False,
-            "update_system": False,
-            "operations": [{"install": ["linux"]}],
-            "pacman": {},
-        }
-        pkgcheck = module_stub("pkgcheck")
-        pkgcheck.build_repo_index = mock.Mock(side_effect=AssertionError("package work must not start"))
-        pkgcheck.preprocess_operations = mock.Mock(side_effect=AssertionError("package work must not start"))
-        module = load_module(
-            "catos_test_pacman_refresh_failure",
-            "usr/lib/calamares/modules/pacman/main.py",
-            fake,
-            {"pkgcheck": pkgcheck},
-        )
-
-        class FakePacmanManager:
-            def full_upgrade(self) -> None:
-                raise subprocess.CalledProcessError(
-                    1,
-                    ["pacman", "-Syu", "--noconfirm"],
-                    stderr="The requested URL returned error: 404",
-                )
-
-        module.PacmanManager = FakePacmanManager
-        module._refresh_target_keyring = lambda: None
-
-        result = module.run()
-
-        self.assertEqual(result[0], "Package Manager error")
-        self.assertIn("recovery.refreshRepositories", fake.storage.values)
-        context = fake.storage.values["recovery.failureContext"]
-        self.assertEqual(context["stage"], "repository-full-upgrade")
-        self.assertEqual(context["command"], "pacman -Syu --noconfirm")
-        self.assertIn("404", context["output"])
-        pkgcheck.build_repo_index.assert_not_called()
 
     def test_keyring_population_fails_when_archlinux_keyring_is_missing(self) -> None:
         fake = FakeCalamares()
@@ -797,7 +702,7 @@ class RecoveryFailureContextTests(unittest.TestCase):
         self.assertEqual(progresses, sorted(progresses))
         self.assertAlmostEqual(progresses[-1], 0.60)
 
-    def test_pacman_failure_context_uses_only_current_command_output(self) -> None:
+    def test_pacman_failure_uses_only_current_command_output(self) -> None:
         fake = FakeCalamares()
         fake.module.job.configuration = {"pacman": {"num_retries": 0}}
         module = load_module(
@@ -825,17 +730,15 @@ class RecoveryFailureContextTests(unittest.TestCase):
         try:
             manager.run_pacman(["pacman", "-S", "required"], callback=True)
         except subprocess.CalledProcessError as error:
-            module._failure(
+            result = module._failure(
                 "Package Manager error",
                 "Package installation failed",
                 error,
                 "package-install",
             )
 
-        context = fake.storage.values["recovery.failureContext"]
-        self.assertEqual(context["category"], "dependency-conflict")
-        self.assertNotIn("old.example", context["output"])
-        self.assertIn("could not satisfy dependencies", context["output"])
+        self.assertNotIn("old.example", result[1])
+        self.assertIn("could not satisfy dependencies", result[1])
 
     def test_pacstrap_telemetry_fallback_keeps_progress_monotonic(self) -> None:
         fake = FakeCalamares()
@@ -893,7 +796,7 @@ class RecoveryFailureContextTests(unittest.TestCase):
         self.assertEqual(progresses, sorted(progresses))
         self.assertGreaterEqual(progresses[1], 0.05)
 
-    def test_pacstrap_configuration_failure_records_structured_context(self) -> None:
+    def test_pacstrap_configuration_failure_returns_details(self) -> None:
         fake = FakeCalamares()
         registry_error = type("RegistryError", (Exception,), {})
         module = load_module(
@@ -927,12 +830,7 @@ class RecoveryFailureContextTests(unittest.TestCase):
             result = module.run()
 
         self.assertEqual(result[0], "Repository configuration missing")
-        context = fake.storage.values["recovery.failureContext"]
-        self.assertEqual(context["category"], "repository-configuration")
-        self.assertEqual(
-            context["reasonCode"],
-            "pacstrap.repository-configuration.pacman-config-missing",
-        )
+        self.assertIn("Required pacman configuration does not exist", result[1])
 
     def test_pacstrap_configuration_errors_use_gettext(self) -> None:
         fake = FakeCalamares()
@@ -1124,12 +1022,10 @@ class RecoveryFailureContextTests(unittest.TestCase):
             result = module.run()
 
         self.assertEqual(result[0], "Package Manager error")
-        context = fake.storage.values["recovery.failureContext"]
-        self.assertEqual(context["stage"], "repository-database-sync")
-        self.assertIn("Could not resolve host", context["output"])
+        self.assertIn("Could not resolve host", result[1])
         module._build_repo_index_host.assert_not_called()
 
-    def test_bootloader_failure_records_provider_and_phase(self) -> None:
+    def test_bootloader_failure_returns_error_details(self) -> None:
         fake = FakeCalamares()
         fake.module.job.configuration = {"phase": "install"}
         fake.storage.insert("bootloader.selected", "limine")
@@ -1169,45 +1065,7 @@ class RecoveryFailureContextTests(unittest.TestCase):
         result = module.run()
 
         self.assertEqual(result[0], "Boot setup failed")
-        context = fake.storage.values["recovery.failureContext"]
-        self.assertEqual(context["schemaVersion"], 1)
-        self.assertEqual(context["source"], "bootloadu")
-        self.assertEqual(context["stage"], "install")
-        self.assertEqual(context["category"], "bootloader-failure")
-        self.assertEqual(context["reasonCode"], "bootloadu.install.bootloader-failure")
-        self.assertEqual(context["provider"], "limine")
-        self.assertIn("registry unavailable", context["details"])
-
-    def test_recovery_context_classifies_root_cause_before_component(self) -> None:
-        fake = FakeCalamares()
-        module = load_module(
-            "catos_test_recovery_context",
-            "usr/lib/calamares/modules/recovery_context.py",
-            fake,
-            {},
-        )
-
-        context = module.build_failure_context(
-            source="bootloadu",
-            stage="install",
-            summary="Boot setup failed",
-            details="固件工具失败",
-            output="efibootmgr: No space left on device",
-        )
-
-        self.assertEqual(context["schemaVersion"], 1)
-        self.assertEqual(context["category"], "storage-full")
-        self.assertEqual(context["reasonCode"], "bootloadu.install.storage-full")
-
-    def test_partition_exec_is_inside_bootstrap_recovery_region(self) -> None:
-        settings = yaml.safe_load(
-            (ROOT / "usr/share/calamares-advanced/settings.conf").read_text(encoding="utf-8")
-        )
-        exec_regions = [entry["exec"] for entry in settings["sequence"] if "exec" in entry]
-        bootstrap = next(region for region in exec_regions if "recovery@bootstrap" in region)
-
-        self.assertEqual(bootstrap[0:3], ["recovery@bootstrap", "partition", "mount"])
-        self.assertFalse(any(region == ["partition"] for region in exec_regions))
+        self.assertIn("registry unavailable", result[1])
 
     def test_bootloader_command_failure_preserves_real_output(self) -> None:
         fake = FakeCalamares()

@@ -16,7 +16,6 @@ for path in (MODULE_DIR, MODULES_DIR):
 
 from context import BootContext, ContextError  # noqa: E402
 from providers import PROVIDERS  # noqa: E402
-from recovery_context import build_failure_context  # noqa: E402
 from providers.base import BootloaduError, configure_mkinitcpio  # noqa: E402
 from registry import RegistryError, install_marker, load_bootloader_registry, platform_supported, provider_profile  # noqa: E402
 from secureboot import enable_target_secure_boot, prepare_secure_boot  # noqa: E402
@@ -85,18 +84,13 @@ def run():
     except (BootloaduError, ContextError, RegistryError, OSError, ValueError) as error:
         libcalamares.utils.error(f"bootloadu: {error}")
         command = getattr(error, "command", None)
-        failure_context = build_failure_context(
-            source="bootloadu",
-            stage=phase,
-            summary=_("Boot setup failed"),
-            details=str(error),
-            command=shlex.join(command) if command else None,
-            exit_code=getattr(error, "returncode", None),
-            output=getattr(error, "output", ""),
-            provider=provider_id,
-        )
-        libcalamares.globalstorage.insert(
-            "recovery.failureContext",
-            failure_context,
-        )
-        return _("Boot setup failed"), str(error)
+        returncode = getattr(error, "returncode", None)
+        output = str(getattr(error, "output", "") or "")
+        details = str(error)
+        if command:
+            details += "\nCommand: " + shlex.join(command)
+        if returncode is not None:
+            details += f"\nExit code: {returncode}"
+        if output:
+            details += "\nLast bootloader output:\n" + output
+        return _("Boot setup failed"), details

@@ -26,7 +26,6 @@ for path in (MODULE_DIR, MODULES_DIR):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 import pkgcheck
-from recovery_context import build_failure_context
 from package_progress import (
     PacmanTransactionTracker,
     RepositoryDatabaseSampler,
@@ -206,16 +205,6 @@ def _failure(summary, description, error, stage):
     )
     if output:
         details += "\nLast pacman output:\n" + output
-    context = build_failure_context(
-        source="pacman",
-        stage=stage,
-        summary=str(summary),
-        details=str(description),
-        command=command,
-        exit_code=returncode,
-        output=output,
-    )
-    libcalamares.globalstorage.insert("recovery.failureContext", context)
     return summary, details
 
 
@@ -662,7 +651,6 @@ def run():
 
     pkgman = PacmanManager()
 
-    recovery_refresh = bool(libcalamares.globalstorage.value("recovery.refreshRepositories"))
     has_internet = bool(libcalamares.globalstorage.value("hasInternet"))
     update_db = libcalamares.job.configuration.get("update_db", False)
     update_system = libcalamares.job.configuration.get("update_system", False)
@@ -677,15 +665,7 @@ def run():
         and "flatpak" not in str(entry.get("source", "")).lower()
     ]
 
-    if recovery_refresh and not has_internet:
-        return _failure(
-            _("Package Manager error"),
-            _("Network is unavailable; the required full repository refresh was not attempted."),
-            RuntimeError("Network is unreachable"),
-            "repository-full-upgrade",
-        )
-
-    needs_keyring = recovery_refresh or (has_internet and (update_db or update_system)) or _operations_require_keyring(operations)
+    needs_keyring = (has_internet and (update_db or update_system)) or _operations_require_keyring(operations)
     if needs_keyring:
         try:
             _refresh_target_keyring()
@@ -698,22 +678,7 @@ def run():
                 "keyring",
             )
 
-    if recovery_refresh:
-        try:
-            pkgman.full_upgrade()
-        except subprocess.CalledProcessError as e:
-            libcalamares.utils.warning(str(e))
-            libcalamares.utils.debug("stdout:" + str(getattr(e, "stdout", "")))
-            libcalamares.utils.debug("stderr:" + str(getattr(e, "stderr", "")))
-            return _failure(
-                _("Package Manager error"),
-                _("The package manager could not fully refresh repositories and upgrade the target system."),
-                e,
-                "repository-full-upgrade",
-            )
-        libcalamares.globalstorage.remove("recovery.refreshRepositories")
-
-    if not recovery_refresh and update_db and has_internet:
+    if update_db and has_internet:
         try:
             pkgman.update_db()
         except subprocess.CalledProcessError as e:
@@ -727,7 +692,7 @@ def run():
                 "repository-database-sync",
             )
 
-    if not recovery_refresh and update_system and has_internet:
+    if update_system and has_internet:
         try:
             pkgman.update_system()
         except subprocess.CalledProcessError as e:

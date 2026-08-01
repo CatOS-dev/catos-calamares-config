@@ -29,7 +29,6 @@ from pacstrap_repository import (  # noqa: E402
     transform_packages,
 )
 from secureboot import secure_boot_enabled as host_secure_boot_enabled  # noqa: E402
-from recovery_context import build_failure_context  # noqa: E402
 from package_progress import (  # noqa: E402
     PACMAN_PRINT_FORMAT,
     PacmanTransactionTracker,
@@ -77,24 +76,25 @@ class PacmanError(Exception):
 
 
 def _failure(summary, details, stage, error=None, output=None, category=None, reason_code=None):
+    del stage, category, reason_code
     captured = output
     if captured is None and error is not None:
         captured = getattr(error, "output", None)
     if captured is None:
         captured = "\n".join(recent_output)
-    context = build_failure_context(
-        source="pacstrap",
-        stage=stage,
-        summary=str(summary),
-        details=str(details),
-        command=getattr(error, "cmd", None),
-        exit_code=getattr(error, "returncode", None),
-        output=str(captured or ""),
-        category=category,
-        reason_code=reason_code,
-    )
-    libcalamares.globalstorage.insert("recovery.failureContext", context)
-    return summary, details
+
+    rendered_details = str(details)
+    command = getattr(error, "cmd", None) if error is not None else None
+    returncode = getattr(error, "returncode", None) if error is not None else None
+    if command:
+        if isinstance(command, (list, tuple)):
+            command = " ".join(str(part) for part in command)
+        rendered_details += f"\nCommand: {command}"
+    if returncode is not None:
+        rendered_details += f"\nExit code: {returncode}"
+    if captured:
+        rendered_details += "\nLast pacstrap output:\n" + str(captured)
+    return summary, rendered_details
 
 
 def pretty_name():
