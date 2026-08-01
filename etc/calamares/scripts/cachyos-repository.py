@@ -64,6 +64,8 @@ def mirrorlist_for(repo_arch: str) -> str:
     return (
         f"Server = https://mirror.nju.edu.cn/cachyos/repo/{repo_arch}/$repo\n"
         f"Server = https://mirrors.ustc.edu.cn/cachyos/repo/{repo_arch}/$repo\n"
+        f"Server = https://cdn77.cachyos.org/repo/{repo_arch}/$repo\n"
+        f"Server = https://us.cachyos.org/repo/{repo_arch}/$repo\n"
     )
 
 

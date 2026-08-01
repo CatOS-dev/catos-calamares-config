@@ -135,8 +135,15 @@ class CachyOSRepositoryTests(unittest.TestCase):
         self.assertIn("mirrors.ustc.edu.cn/cachyos/repo/x86_64/$repo", combined)
         self.assertIn("mirror.nju.edu.cn/cachyos/repo/x86_64_v3/$repo", combined)
         self.assertIn("mirrors.ustc.edu.cn/cachyos/repo/x86_64_v4/$repo", combined)
-        self.assertNotIn("cdn77", combined)
-        self.assertNotIn("mirror.cachyos.org", combined)
+        self.assertIn("cdn77.cachyos.org/repo/x86_64/$repo", combined)
+        self.assertIn("us.cachyos.org/repo/x86_64_v3/$repo", combined)
+
+        servers = self.repository.mirrorlist_for("x86_64").splitlines()
+        self.assertEqual(len(servers), 4)
+        self.assertIn("mirror.nju.edu.cn", servers[0])
+        self.assertIn("mirrors.ustc.edu.cn", servers[1])
+        self.assertIn("cdn77.cachyos.org", servers[2])
+        self.assertIn("us.cachyos.org", servers[3])
 
     def test_pacstrap_switches_kernel_and_config_together(self):
         packages = ["base", "linux", "linux-headers", "grub"]
