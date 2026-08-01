@@ -70,7 +70,7 @@ class PackageProgressTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             sync = Path(temporary)
             database = sync / "core.db"
-            database.write_bytes(b"old")
+            database.write_bytes(b"o" * 1024)
             sampler = module.RepositoryDatabaseSampler(sync, ["core"])
 
             partial = sync / "core.db.part"
@@ -78,12 +78,14 @@ class PackageProgressTests(unittest.TestCase):
             first = sampler.sample(now=10.0)
             self.assertEqual(first.transferred_bytes, 256)
             self.assertEqual(first.completed_repositories, 0)
+            self.assertAlmostEqual(first.ratio, 0.25)
             self.assertEqual(first.active_repositories, ("core",))
 
             partial.write_bytes(b"x" * 768)
             second = sampler.sample(now=12.0)
             self.assertEqual(second.transferred_bytes, 768)
             self.assertEqual(second.speed_bytes_per_second, 256.0)
+            self.assertAlmostEqual(second.ratio, 0.75)
 
             partial.unlink()
             database.write_bytes(b"new database" * 100)

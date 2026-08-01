@@ -217,7 +217,12 @@ class RepositoryDatabaseSampler:
         self._repositories = tuple(dict.fromkeys(str(item) for item in repositories if str(item)))
         self._smoothing = min(1.0, max(0.0, float(smoothing)))
         self._baseline = {repository: self._final_signature(repository) for repository in self._repositories}
+        self._estimated = {
+            repository: max(1, signature[1] if signature is not None else 1)
+            for repository, signature in self._baseline.items()
+        }
         self._observed = {repository: 0 for repository in self._repositories}
+        self._ratio = 0.0
         self._previous_time: float | None = None
         self._previous_bytes = 0
         self._speed = 0.0
@@ -243,15 +248,22 @@ class RepositoryDatabaseSampler:
         timestamp = time.monotonic() if now is None else float(now)
         completed = 0
         active: list[str] = []
+        weighted_progress = 0
         for repository in self._repositories:
             partial_bytes = self._partial_bytes(repository)
             current_signature = self._final_signature(repository)
             changed = current_signature is not None and current_signature != self._baseline[repository]
+            if current_signature is not None:
+                self._estimated[repository] = max(self._estimated[repository], current_signature[1])
+            if partial_bytes > 0:
+                self._estimated[repository] = max(self._estimated[repository], partial_bytes)
             if changed:
                 completed += 1
                 observed = current_signature[1]
+                weighted_progress += self._estimated[repository]
             else:
                 observed = partial_bytes
+                weighted_progress += min(partial_bytes, self._estimated[repository])
                 if partial_bytes > 0:
                     active.append(repository)
             self._observed[repository] = max(self._observed[repository], observed)
@@ -268,13 +280,17 @@ class RepositoryDatabaseSampler:
         self._previous_bytes = transferred
 
         total = len(self._repositories)
-        ratio = completed / total if total else 1.0
+        estimated_total = sum(self._estimated.values())
+        candidate_ratio = weighted_progress / estimated_total if estimated_total > 0 else 1.0
+        if completed == total:
+            candidate_ratio = 1.0
+        self._ratio = max(self._ratio, min(1.0, max(0.0, candidate_ratio)))
         return RepositoryRefreshSnapshot(
             transferred_bytes=transferred,
             completed_repositories=completed,
             total_repositories=total,
             speed_bytes_per_second=self._speed,
-            ratio=min(1.0, max(0.0, ratio)),
+            ratio=self._ratio,
             active_repositories=tuple(active),
         )
 

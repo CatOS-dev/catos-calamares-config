@@ -934,6 +934,87 @@ class RecoveryFailureContextTests(unittest.TestCase):
             "pacstrap.repository-configuration.pacman-config-missing",
         )
 
+    def test_pacstrap_configuration_errors_use_gettext(self) -> None:
+        fake = FakeCalamares()
+        registry_error = type("RegistryError", (Exception,), {})
+        module = load_module(
+            "catos_test_pacstrap_translated_failure",
+            "usr/lib/calamares/modules/pacstrap/main.py",
+            fake,
+            {
+                "pkgcheck": module_stub("pkgcheck"),
+                "pacstrap_repository": module_stub(
+                    "pacstrap_repository",
+                    CACHYOS_SELECTION="cachyos",
+                    install_repository_config=lambda *_args, **_kwargs: None,
+                    pacman_config_for=lambda *_args, **_kwargs: "/missing/pacman.conf",
+                    transform_packages=lambda packages, _selection: packages,
+                ),
+                "secureboot": module_stub("secureboot", secure_boot_enabled=lambda: False),
+                "registry": module_stub(
+                    "registry",
+                    RegistryError=registry_error,
+                    load_bootloader_registry=lambda: {},
+                    missing_required_packages=lambda *_args: [],
+                    package_plan=lambda *_args, **_kwargs: [],
+                ),
+            },
+        )
+        module._ = lambda text: f"translated:{text}"
+        with tempfile.TemporaryDirectory() as temporary:
+            fake.storage.insert("rootMountPoint", temporary)
+            fake.storage.insert("packagechooser_repository", "catos")
+            fake.module.job.configuration = {"basePackages": ["base"]}
+            result = module.run()
+
+        self.assertEqual(result[0], "translated:Repository configuration missing")
+        self.assertTrue(result[1].startswith("translated:"))
+
+    def test_custom_module_statuses_use_gettext(self) -> None:
+        fake = FakeCalamares()
+        bootloadu = load_module(
+            "catos_test_bootloadu_pretty_name",
+            "usr/lib/calamares/modules/bootloadu/main.py",
+            fake,
+            {
+                "context": module_stub(
+                    "context",
+                    BootContext=type("BootContext", (), {}),
+                    ContextError=type("ContextError", (Exception,), {}),
+                ),
+                "providers": module_stub("providers", PROVIDERS={}),
+                "providers.base": module_stub(
+                    "providers.base",
+                    BootloaduError=type("BootloaduError", (Exception,), {}),
+                    configure_mkinitcpio=lambda _context: None,
+                ),
+                "registry": module_stub(
+                    "registry",
+                    RegistryError=type("RegistryError", (Exception,), {}),
+                    install_marker=lambda _registry: "/run/calamares/marker",
+                    load_bootloader_registry=lambda _path: {},
+                    platform_supported=lambda *_args: True,
+                    provider_profile=lambda *_args: {},
+                ),
+                "secureboot": module_stub(
+                    "secureboot",
+                    enable_target_secure_boot=lambda *_args: None,
+                    prepare_secure_boot=lambda *_args: None,
+                ),
+            },
+        )
+        bootloadu._ = lambda text: f"translated:{text}"
+        self.assertEqual(bootloadu.pretty_name(), "translated:Prepare the boot environment")
+
+        chwd = load_module(
+            "catos_test_chwd_pretty_name",
+            "usr/lib/calamares/modules/chwd/main.py",
+            fake,
+            {},
+        )
+        chwd._ = lambda text: f"translated:{text}"
+        self.assertEqual(chwd.pretty_name(), "translated:Installing needed drivers for CatOS...")
+
     def test_pacstrap_repository_refresh_streams_terminal_frames(self) -> None:
         fake = FakeCalamares()
         registry_error = type("RegistryError", (Exception,), {})

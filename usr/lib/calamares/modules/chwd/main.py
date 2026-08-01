@@ -65,14 +65,14 @@ def run():
     root_mount_point = libcalamares.globalstorage.value("rootMountPoint")
 
     if not root_mount_point:
-        return ("No mount point for root partition in globalstorage",
-                "globalstorage does not contain a \"rootMountPoint\" key, "
-                "doing nothing")
+        return (_("No mount point for root partition in globalstorage"),
+                _('globalstorage does not contain a "rootMountPoint" key, doing nothing'))
 
     if not os.path.exists(root_mount_point):
-        return ("Bad mount point for root partition in globalstorage",
-                "globalstorage[\"rootMountPoint\"] is \"{}\", which does not "
-                "exist, doing nothing".format(root_mount_point))
+        return (_("Bad mount point for root partition in globalstorage"),
+                _('globalstorage["rootMountPoint"] is "{root}", which does not exist, doing nothing').format(
+                    root=root_mount_point
+                ))
 
     # run the command in chroot
     shell_command = ["arch-chroot", root_mount_point, "chwd", "--autoconfigure"]
