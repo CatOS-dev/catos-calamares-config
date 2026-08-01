@@ -245,6 +245,42 @@ class RecoveryFailureContextTests(unittest.TestCase):
         self.assertIn("cachyos", fake.commands[1])
         self.assertNotIn("blackarch", fake.commands[1])
 
+    def test_remove_only_operations_do_not_require_keyring_refresh(self) -> None:
+        fake = FakeCalamares()
+        fake.module.job.configuration = {
+            "backend": "pacman",
+            "skip_if_no_internet": False,
+            "update_db": False,
+            "update_system": False,
+            "operations": [{"try_remove": ["live-only-package"]}],
+            "pacman": {},
+        }
+        pkgcheck = module_stub("pkgcheck")
+        pkgcheck.build_repo_index = lambda: ({"live-only-package"}, set())
+        pkgcheck.preprocess_operations = lambda **_kwargs: ([{"try_remove": ["live-only-package"]}], 1)
+        module = load_module(
+            "catos_test_remove_without_keyring",
+            "usr/lib/calamares/modules/pacman/main.py",
+            fake,
+            {"pkgcheck": pkgcheck},
+        )
+        keyring = mock.Mock(side_effect=AssertionError("remove-only work must not refresh keyrings"))
+        module._refresh_target_keyring = keyring
+
+        class FakePacmanManager:
+            package_phase_start = 0.0
+
+            def operation_try_remove(self, packages) -> None:
+                self.removed = list(packages)
+
+            def report_package_completion(self) -> None:
+                return None
+
+        module.PacmanManager = FakePacmanManager
+
+        self.assertIsNone(module.run())
+        keyring.assert_not_called()
+
     def test_repository_recovery_performs_one_full_upgrade_before_package_work(self) -> None:
         fake = FakeCalamares()
         fake.storage.insert("hasInternet", True)
@@ -364,6 +400,43 @@ class RecoveryFailureContextTests(unittest.TestCase):
         self.assertIn("required keyring is missing", result.stderr)
         self.assertFalse(log.exists())
 
+    def test_pacstrap_nonzero_exit_preserves_process_failure(self) -> None:
+        fake = FakeCalamares()
+        registry_error = type("RegistryError", (Exception,), {})
+        module = load_module(
+            "catos_test_pacstrap_failed_process",
+            "usr/lib/calamares/modules/pacstrap/main.py",
+            fake,
+            {
+                "pkgcheck": module_stub("pkgcheck"),
+                "pacstrap_repository": module_stub(
+                    "pacstrap_repository",
+                    CACHYOS_SELECTION="cachyos",
+                    install_repository_config=lambda *_args, **_kwargs: None,
+                    pacman_config_for=lambda *_args, **_kwargs: "/etc/pacman.conf",
+                    transform_packages=lambda packages, _selection: packages,
+                ),
+                "secureboot": module_stub("secureboot", secure_boot_enabled=lambda: False),
+                "registry": module_stub(
+                    "registry",
+                    RegistryError=registry_error,
+                    load_bootloader_registry=lambda: {},
+                    missing_required_packages=lambda *_args: [],
+                    package_plan=lambda *_args, **_kwargs: [],
+                ),
+            },
+        )
+
+        with self.assertRaises(module.PacmanError) as caught:
+            module.run_in_host(
+                ["sh", "-c", "printf 'download failed\\n'; exit 7"],
+                lambda _frame: None,
+            )
+
+        self.assertEqual(caught.exception.returncode, 7)
+        self.assertIn("download failed", caught.exception.output)
+        self.assertEqual(caught.exception.cmd[:2], ["sh", "-c"])
+
     def test_pacstrap_reads_carriage_return_frames_immediately(self) -> None:
         fake = FakeCalamares()
         registry_error = type("RegistryError", (Exception,), {})
@@ -460,16 +533,32 @@ class RecoveryFailureContextTests(unittest.TestCase):
             },
         )
         captured: list[list[str]] = []
-        module._host_capture_lines = lambda command: captured.append(command) or [
-            "linux\t6.15-1\t1024\thttps://repo.example/linux.pkg.tar.zst"
-        ]
-        with tempfile.TemporaryDirectory() as temporary:
+        observed: dict[str, object] = {}
+        with tempfile.TemporaryDirectory() as host_db_temporary, tempfile.TemporaryDirectory() as temporary:
+            host_db = Path(host_db_temporary)
+            (host_db / "sync").mkdir()
+
+            def capture(command):
+                if command[0] == "pacman-conf":
+                    return [str(host_db)]
+                captured.append(command)
+                dbpath = Path(command[command.index("--dbpath") + 1])
+                observed["local_empty"] = (dbpath / "local").is_dir() and not any((dbpath / "local").iterdir())
+                observed["sync_target"] = (dbpath / "sync").resolve()
+                return ["linux\t6.15-1\t1024\thttps://repo.example/linux.pkg.tar.zst"]
+
+            module._host_capture_lines = capture
             plan, cache = module._download_plan("/etc/pacman.conf", temporary, ["linux"])
 
-        self.assertEqual(plan.total_bytes, 1024)
-        self.assertEqual(cache, Path(temporary) / "var/cache/pacman/pkg")
-        self.assertIn(str(cache), captured[0])
-        self.assertIn(module.PACMAN_PRINT_FORMAT, captured[0])
+            self.assertEqual(plan.total_bytes, 1024)
+            self.assertEqual(cache, Path(temporary) / "var/cache/pacman/pkg")
+            command = captured[0]
+            self.assertIn(str(cache), command)
+            self.assertIn(module.PACMAN_PRINT_FORMAT, command)
+            self.assertIn("--root", command)
+            self.assertEqual(command[command.index("--root") + 1], temporary)
+            self.assertTrue(observed["local_empty"])
+            self.assertEqual(observed["sync_target"], host_db / "sync")
 
     def test_pacman_install_uses_real_download_telemetry(self) -> None:
         fake = FakeCalamares()
@@ -681,6 +770,129 @@ class RecoveryFailureContextTests(unittest.TestCase):
         self.assertEqual(first, (0.25, 0.5))
         self.assertEqual(second, (0.5, 0.75))
 
+    def test_pacman_package_completion_keeps_preflight_offset_monotonic(self) -> None:
+        fake = FakeCalamares()
+        progresses: list[float] = []
+        fake.module.job.setprogress = progresses.append
+        fake.module.job.configuration = {"pacman": {}}
+        module = load_module(
+            "catos_test_pacman_completion_offset",
+            "usr/lib/calamares/modules/pacman/main.py",
+            fake,
+            {"pkgcheck": module_stub("pkgcheck")},
+        )
+        module.total_packages = 4
+        module.completed_packages = 0
+        manager = module.PacmanManager()
+        manager.package_phase_start = 0.20
+
+        def complete_operation(_command, callback=False):
+            self.assertTrue(callback)
+            manager.progress_fraction = manager.operation_end
+            fake.module.job.setprogress(manager.progress_fraction)
+
+        manager.run_pacman = complete_operation
+        module.run_operations(manager, {"install": ["one", "two"]})
+
+        self.assertEqual(progresses, sorted(progresses))
+        self.assertAlmostEqual(progresses[-1], 0.60)
+
+    def test_pacman_failure_context_uses_only_current_command_output(self) -> None:
+        fake = FakeCalamares()
+        fake.module.job.configuration = {"pacman": {"num_retries": 0}}
+        module = load_module(
+            "catos_test_pacman_current_output",
+            "usr/lib/calamares/modules/pacman/main.py",
+            fake,
+            {"pkgcheck": module_stub("pkgcheck")},
+        )
+        module._target_download_plan = lambda _command: None
+        manager = module.PacmanManager()
+        calls = 0
+
+        def process_output(arguments, callback=None, *_extra):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                callback("error: Could not resolve host: old.example")
+                raise subprocess.CalledProcessError(1, arguments)
+            callback("error: failed to prepare transaction (could not satisfy dependencies)")
+            raise subprocess.CalledProcessError(1, arguments)
+
+        fake.utils.target_env_process_output = process_output
+        with self.assertRaises(subprocess.CalledProcessError):
+            manager.run_pacman(["pacman", "-S", "optional"], callback=True)
+        try:
+            manager.run_pacman(["pacman", "-S", "required"], callback=True)
+        except subprocess.CalledProcessError as error:
+            module._failure(
+                "Package Manager error",
+                "Package installation failed",
+                error,
+                "package-install",
+            )
+
+        context = fake.storage.values["recovery.failureContext"]
+        self.assertEqual(context["category"], "dependency-conflict")
+        self.assertNotIn("old.example", context["output"])
+        self.assertIn("could not satisfy dependencies", context["output"])
+
+    def test_pacstrap_telemetry_fallback_keeps_progress_monotonic(self) -> None:
+        fake = FakeCalamares()
+        registry_error = type("RegistryError", (Exception,), {})
+        progresses: list[float] = []
+        fake.module.job.setprogress = progresses.append
+        fake.module.job.configuration = {
+            "basePackages": ["base"],
+            "requiredPackages": [],
+            "postInstallFiles": [],
+            "requiredPostInstallFiles": [],
+            "requiredPostInstallExecutables": [],
+            "sync_db": False,
+        }
+        module = load_module(
+            "catos_test_pacstrap_telemetry_fallback_progress",
+            "usr/lib/calamares/modules/pacstrap/main.py",
+            fake,
+            {
+                "pkgcheck": module_stub(
+                    "pkgcheck",
+                    filter_operation_list=lambda _key, items, _packages, _groups: list(items),
+                ),
+                "pacstrap_repository": module_stub(
+                    "pacstrap_repository",
+                    CACHYOS_SELECTION="cachyos",
+                    install_repository_config=lambda *_args, **_kwargs: None,
+                    pacman_config_for=lambda *_args, **_kwargs: "/etc/pacman.conf",
+                    transform_packages=lambda packages, _selection: list(packages),
+                ),
+                "secureboot": module_stub("secureboot", secure_boot_enabled=lambda: False),
+                "registry": module_stub(
+                    "registry",
+                    RegistryError=registry_error,
+                    load_bootloader_registry=lambda: {},
+                    missing_required_packages=lambda *_args: [],
+                    package_plan=lambda *_args, **_kwargs: [],
+                ),
+            },
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            fake.storage.insert("rootMountPoint", temporary)
+            fake.storage.insert("packagechooser_repository", "catos")
+            fake.storage.insert("hasInternet", False)
+            module._build_repo_index_host = lambda _config: ({"base"}, set())
+            module._download_plan = mock.Mock(side_effect=RuntimeError("planning unavailable"))
+
+            def run_in_host(_command, callback, _heartbeat=None):
+                callback("starting package transaction")
+
+            module.run_in_host = run_in_host
+            result = module.run()
+
+        self.assertIsNone(result)
+        self.assertEqual(progresses, sorted(progresses))
+        self.assertGreaterEqual(progresses[1], 0.05)
+
     def test_pacstrap_configuration_failure_records_structured_context(self) -> None:
         fake = FakeCalamares()
         registry_error = type("RegistryError", (Exception,), {})
@@ -752,14 +964,30 @@ class RecoveryFailureContextTests(unittest.TestCase):
         progresses: list[float] = []
         fake.module.job.setprogress = progresses.append
         fake.module.job.configuration = {"sync_db": True}
-        calls: list[tuple[list[str], object]] = []
-        module.run_in_host = lambda command, callback: calls.append((list(command), callback))
+        calls: list[tuple[list[str], object, object]] = []
+        snapshot = types.SimpleNamespace(
+            completed_repositories=1,
+            total_repositories=2,
+            transferred_bytes=1024,
+            speed_bytes_per_second=512.0,
+            ratio=0.5,
+            active_repositories=("core",),
+        )
+        module._repository_refresh_sampler = lambda _config: types.SimpleNamespace(sample=lambda: snapshot)
+
+        def run_in_host(command, callback, heartbeat=None):
+            calls.append((list(command), callback, heartbeat))
+            if heartbeat is not None:
+                heartbeat()
+
+        module.run_in_host = run_in_host
 
         module._maybe_sync_db_host("/etc/pacman.conf")
 
         self.assertEqual(calls[0][0], ["pacman", "--config", "/etc/pacman.conf", "-Sy", "--noconfirm"])
         self.assertIs(calls[0][1], module.line_cb)
-        self.assertEqual(progresses, [0.02, 0.04])
+        self.assertTrue(callable(calls[0][2]))
+        self.assertEqual(progresses, [0.02, 0.03, 0.03, 0.04])
 
     def test_pacstrap_sync_failure_stops_before_repository_query(self) -> None:
         fake = FakeCalamares()

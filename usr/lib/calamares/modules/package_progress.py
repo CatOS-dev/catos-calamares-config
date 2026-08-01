@@ -12,7 +12,7 @@ from urllib.parse import unquote, urlparse
 
 
 PACMAN_PRINT_FORMAT = "%n\t%v\t%s\t%l"
-_TRANSACTION_PROGRESS = re.compile(r"^\(\s*(\d+)\s*/\s*(\d+)\s*\)")
+_TRANSACTION_PROGRESS = re.compile(r"^\(\s*(\d+)\s*/\s*(\d+)\s*\)\s*(.*)$")
 _ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 
@@ -107,6 +107,63 @@ def parse_transaction_progress(frame: str) -> float | None:
     return min(1.0, max(0.0, current / total))
 
 
+class PacmanTransactionTracker:
+    """Track real pacman transaction stages without treating each counter as global."""
+
+    _STAGES = (
+        (("running pre-transaction hooks",), 0.00, 0.03),
+        (("checking keys in keyring",), 0.03, 0.06),
+        (("checking package integrity",), 0.06, 0.11),
+        (("loading package files",), 0.11, 0.15),
+        (("checking for file conflicts",), 0.15, 0.18),
+        (("checking available disk space",), 0.18, 0.20),
+        (("installing ", "upgrading ", "reinstalling ", "downgrading ", "removing "), 0.20, 0.90),
+        (("running post-transaction hooks",), 0.90, 1.00),
+    )
+
+    def __init__(self) -> None:
+        self._progress = 0.0
+        self._active_stage: tuple[float, float] | None = None
+
+    @property
+    def progress(self) -> float:
+        return self._progress
+
+    def reset(self) -> None:
+        self._progress = 0.0
+        self._active_stage = None
+
+    def observe(self, frame: str) -> float | None:
+        text = _ANSI_ESCAPE.sub("", str(frame)).lstrip()
+        lowered = text.lower()
+        for patterns, start, end in self._STAGES:
+            if any(pattern in lowered for pattern in patterns):
+                self._active_stage = (start, end)
+                break
+
+        match = _TRANSACTION_PROGRESS.match(text)
+        if not match:
+            return None
+        current = int(match.group(1))
+        total = int(match.group(2))
+        if total <= 0:
+            return None
+        description = match.group(3).strip().lower()
+        ratio = min(1.0, max(0.0, current / total))
+        stage = None
+        for patterns, start, end in self._STAGES:
+            if any(pattern in description for pattern in patterns):
+                stage = (start, end)
+                self._active_stage = stage
+                break
+        if stage is None:
+            stage = self._active_stage
+        if stage is None:
+            return None
+        candidate = map_progress(stage[0], stage[1], ratio)
+        self._progress = max(self._progress, candidate)
+        return self._progress
+
 def format_bytes(value: float) -> str:
     amount = max(0.0, float(value))
     units = ("B", "KiB", "MiB", "GiB", "TiB")
@@ -134,6 +191,102 @@ def format_transfer_status(snapshot: TransferSnapshot, label: str) -> str:
         if len(snapshot.active_packages) > 2:
             visible += f" +{len(snapshot.active_packages) - 2}"
         text += f" · {visible}"
+    return text
+
+
+class RepositoryRefreshSnapshot(NamedTuple):
+    transferred_bytes: int
+    completed_repositories: int
+    total_repositories: int
+    speed_bytes_per_second: float
+    ratio: float
+    active_repositories: tuple[str, ...]
+
+
+class RepositoryDatabaseSampler:
+    """Observe pacman sync database files during a repository refresh."""
+
+    def __init__(
+        self,
+        sync_directory: os.PathLike[str] | str,
+        repositories: Sequence[str],
+        *,
+        smoothing: float = 0.35,
+    ) -> None:
+        self._sync_directory = Path(sync_directory)
+        self._repositories = tuple(dict.fromkeys(str(item) for item in repositories if str(item)))
+        self._smoothing = min(1.0, max(0.0, float(smoothing)))
+        self._baseline = {repository: self._final_signature(repository) for repository in self._repositories}
+        self._observed = {repository: 0 for repository in self._repositories}
+        self._previous_time: float | None = None
+        self._previous_bytes = 0
+        self._speed = 0.0
+
+    def _final_signature(self, repository: str) -> tuple[int, int] | None:
+        path = self._sync_directory / f"{repository}.db"
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+        return stat.st_mtime_ns, stat.st_size
+
+    def _partial_bytes(self, repository: str) -> int:
+        total = 0
+        for suffix in (".db.part", ".db.sig.part"):
+            try:
+                total += (self._sync_directory / f"{repository}{suffix}").stat().st_size
+            except OSError:
+                pass
+        return total
+
+    def sample(self, *, now: float | None = None) -> RepositoryRefreshSnapshot:
+        timestamp = time.monotonic() if now is None else float(now)
+        completed = 0
+        active: list[str] = []
+        for repository in self._repositories:
+            partial_bytes = self._partial_bytes(repository)
+            current_signature = self._final_signature(repository)
+            changed = current_signature is not None and current_signature != self._baseline[repository]
+            if changed:
+                completed += 1
+                observed = current_signature[1]
+            else:
+                observed = partial_bytes
+                if partial_bytes > 0:
+                    active.append(repository)
+            self._observed[repository] = max(self._observed[repository], observed)
+
+        transferred = sum(self._observed.values())
+        if self._previous_time is not None and timestamp > self._previous_time:
+            delta = transferred - self._previous_bytes
+            raw_speed = max(0.0, delta / (timestamp - self._previous_time))
+            if self._speed <= 0.0:
+                self._speed = raw_speed
+            else:
+                self._speed = self._smoothing * raw_speed + (1.0 - self._smoothing) * self._speed
+        self._previous_time = timestamp
+        self._previous_bytes = transferred
+
+        total = len(self._repositories)
+        ratio = completed / total if total else 1.0
+        return RepositoryRefreshSnapshot(
+            transferred_bytes=transferred,
+            completed_repositories=completed,
+            total_repositories=total,
+            speed_bytes_per_second=self._speed,
+            ratio=min(1.0, max(0.0, ratio)),
+            active_repositories=tuple(active),
+        )
+
+
+def format_repository_refresh_status(snapshot: RepositoryRefreshSnapshot, label: str) -> str:
+    text = f"{label}: {snapshot.completed_repositories} / {snapshot.total_repositories}"
+    if snapshot.transferred_bytes > 0:
+        text += f" · {format_bytes(snapshot.transferred_bytes)}"
+    if snapshot.speed_bytes_per_second > 0:
+        text += f" · {format_bytes(snapshot.speed_bytes_per_second)}/s"
+    if snapshot.active_repositories:
+        text += " · " + ", ".join(snapshot.active_repositories[:2])
     return text
 
 

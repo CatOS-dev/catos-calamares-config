@@ -6,6 +6,7 @@ import selectors
 import sys
 import subprocess
 import shutil
+import tempfile
 import time
 import gettext
 from collections import deque
@@ -31,12 +32,14 @@ from secureboot import secure_boot_enabled as host_secure_boot_enabled  # noqa: 
 from recovery_context import build_failure_context  # noqa: E402
 from package_progress import (  # noqa: E402
     PACMAN_PRINT_FORMAT,
+    PacmanTransactionTracker,
+    RepositoryDatabaseSampler,
     TerminalFrameDecoder,
     TransferSampler,
+    format_repository_refresh_status,
     format_transfer_status,
     map_progress,
     parse_download_plan,
-    parse_transaction_progress,
 )
 from registry import (  # noqa: E402
     RegistryError,
@@ -185,12 +188,17 @@ def run_in_host(command, line_func, heartbeat_func=None, heartbeat_interval=0.5)
         proc.stdout.close()
 
     proc.wait()
+    if heartbeat_func is not None:
+        try:
+            heartbeat_func()
+        except Exception as error:
+            libcalamares.utils.warning(f"pacstrap progress telemetry failed: {error!s}")
     if proc.returncode != 0:
         raise PacmanError(
             f"Failed to run: {' '.join(command)} (rc={proc.returncode})",
             command=command,
             returncode=proc.returncode,
-            output="\n".join(output_frames[-200:]),
+            output="\n".join(output_frames),
         )
 
 
@@ -208,10 +216,16 @@ def _host_capture_lines(command):
         bufsize=1,
         env=environment,
     )
+    if proc.stdout is None:
+        proc.kill()
+        raise PacmanError(f"Failed to capture output: {' '.join(command)}", command=command)
     lines = []
-    for line in proc.stdout:
-        if line:
-            lines.append(line.rstrip("\n"))
+    try:
+        for line in proc.stdout:
+            if line:
+                lines.append(line.rstrip("\n"))
+    finally:
+        proc.stdout.close()
     proc.wait()
     if proc.returncode != 0:
         raise PacmanError(
@@ -226,19 +240,34 @@ def _host_capture_lines(command):
 def _download_plan(pacman_config, root_mount_point, packages):
     cache_directory = Path(root_mount_point) / "var/cache/pacman/pkg"
     cache_directory.mkdir(parents=True, exist_ok=True)
-    command = [
-        "pacman",
-        "--config",
-        pacman_config,
-        "-Sp",
-        "--print-format",
-        PACMAN_PRINT_FORMAT,
-        "--cachedir",
-        str(cache_directory),
-        "--noconfirm",
-        *packages,
-    ]
-    return parse_download_plan(_host_capture_lines(command)), cache_directory
+    configured_dbpath = _host_capture_lines(["pacman-conf", "-c", pacman_config, "DBPath"])
+    host_dbpath = Path(configured_dbpath[-1] if configured_dbpath else "/var/lib/pacman")
+    host_sync = host_dbpath / "sync"
+    if not host_sync.is_dir():
+        raise PacmanError(f"Pacman sync database directory is unavailable: {host_sync}")
+
+    with tempfile.TemporaryDirectory(prefix="calamares-pacstrap-plan-") as temporary:
+        plan_dbpath = Path(temporary)
+        (plan_dbpath / "local").mkdir()
+        (plan_dbpath / "sync").symlink_to(host_sync, target_is_directory=True)
+        command = [
+            "pacman",
+            "--config",
+            pacman_config,
+            "--root",
+            root_mount_point,
+            "--dbpath",
+            str(plan_dbpath),
+            "-Sp",
+            "--print-format",
+            PACMAN_PRINT_FORMAT,
+            "--cachedir",
+            str(cache_directory),
+            "--noconfirm",
+            *packages,
+        ]
+        plan = parse_download_plan(_host_capture_lines(command))
+    return plan, cache_directory
 
 
 def _transfer_reporter(progress_start, progress_end, phase_state):
@@ -252,7 +281,8 @@ def _transfer_reporter(progress_start, progress_end, phase_state):
             return
         custom_status_message = format_transfer_status(snapshot, _("Downloading packages"))
         last_progress = max(last_progress, map_progress(progress_start, progress_end, snapshot.ratio))
-        libcalamares.job.setprogress(last_progress)
+        phase_state["progress"] = max(phase_state["progress"], last_progress)
+        libcalamares.job.setprogress(phase_state["progress"])
         now = time.monotonic()
         if now - last_log_time >= 2.0:
             libcalamares.utils.debug("pacstrap: " + custom_status_message)
@@ -266,6 +296,13 @@ def _has_internet():
     return bool(libcalamares.globalstorage.value("hasInternet")) or bool(
         libcalamares.globalstorage.value("online")
     )
+
+
+def _repository_refresh_sampler(pacman_config):
+    repositories = _host_capture_lines(["pacman-conf", "-c", pacman_config, "--repo-list"])
+    configured_dbpath = _host_capture_lines(["pacman-conf", "-c", pacman_config, "DBPath"])
+    dbpath = Path(configured_dbpath[-1] if configured_dbpath else "/var/lib/pacman")
+    return RepositoryDatabaseSampler(dbpath / "sync", repositories)
 
 
 def _maybe_sync_db_host(pacman_config):
@@ -286,10 +323,28 @@ def _maybe_sync_db_host(pacman_config):
     custom_status_message = _("Refreshing repository databases")
     libcalamares.job.setprogress(0.02)
     libcalamares.utils.debug("Syncing pacman database before pkgcheck (pacman -Sy)...")
+    heartbeat = None
+    try:
+        sampler = _repository_refresh_sampler(pacman_config)
+
+        def heartbeat():
+            global custom_status_message
+            snapshot = sampler.sample()
+            custom_status_message = format_repository_refresh_status(
+                snapshot,
+                _("Refreshing repository databases"),
+            )
+            libcalamares.job.setprogress(map_progress(0.02, 0.04, snapshot.ratio))
+
+        heartbeat()
+    except Exception as error:
+        libcalamares.utils.warning(f"pacstrap repository telemetry unavailable: {error!s}")
+
     # Using run_in_host so output goes through line_cb for UI/log.
     run_in_host(
         ["pacman", "--config", pacman_config, "-Sy", "--noconfirm"],
         line_cb,
+        heartbeat,
     )
     libcalamares.job.setprogress(0.04)
 
@@ -516,7 +571,8 @@ def run():
         root_mount_point,
     ] + base_packages
     heartbeat_func = None
-    phase_state = {"transaction_started": False, "progress": 0.0}
+    phase_state = {"transaction_started": False, "progress": 0.05}
+    transaction_tracker = PacmanTransactionTracker()
     try:
         plan, cache_directory = _download_plan(pacman_config, root_mount_point, base_packages)
         if plan.total_bytes > 0:
@@ -537,21 +593,22 @@ def run():
             )
         else:
             custom_status_message = _("All required packages are cached; installing packages")
-            libcalamares.job.setprogress(0.78)
+            phase_state["progress"] = max(phase_state["progress"], 0.78)
+            libcalamares.job.setprogress(phase_state["progress"])
     except Exception as error:
         heartbeat_func = None
         libcalamares.utils.warning(f"pacstrap download telemetry unavailable: {error!s}")
 
     def install_output(frame):
         line_cb(frame)
-        transaction_ratio = parse_transaction_progress(frame)
+        transaction_ratio = transaction_tracker.observe(frame)
         if transaction_ratio is not None:
             phase_state["transaction_started"] = True
             phase_state["progress"] = max(
                 phase_state["progress"],
                 map_progress(0.80, 0.96, transaction_ratio),
             )
-            libcalamares.job.setprogress(phase_state["progress"])
+        libcalamares.job.setprogress(phase_state["progress"])
 
     try:
         run_in_host(pacstrap_command, install_output, heartbeat_func)

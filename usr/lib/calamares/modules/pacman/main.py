@@ -28,12 +28,14 @@ for path in (MODULE_DIR, MODULES_DIR):
 import pkgcheck
 from recovery_context import build_failure_context
 from package_progress import (
+    PacmanTransactionTracker,
+    RepositoryDatabaseSampler,
     TransferSampler,
     build_pacman_plan_command,
+    format_repository_refresh_status,
     format_transfer_status,
     map_progress,
     parse_download_plan,
-    parse_transaction_progress,
 )
 
 
@@ -63,9 +65,6 @@ mode_packages = None
 def _change_mode(mode):
     global mode_packages
     mode_packages = mode
-    # Avoid divide-by-zero elsewhere; total_packages can be 0 early.
-    if total_packages > 0:
-        libcalamares.job.setprogress(completed_packages * 1.0 / total_packages)
 
 
 def pretty_name():
@@ -252,6 +251,34 @@ def _target_download_plan(command):
     return parse_download_plan(output)
 
 
+def _target_repository_refresh_sampler():
+    repositories = []
+    libcalamares.utils.target_env_process_output(["pacman-conf", "--repo-list"], repositories)
+    dbpaths = []
+    libcalamares.utils.target_env_process_output(["pacman-conf", "DBPath"], dbpaths)
+    root_mount_point = Path(str(libcalamares.globalstorage.value("rootMountPoint") or "/"))
+    dbpath = str(dbpaths[-1]).strip() if dbpaths else "/var/lib/pacman"
+    sync_directory = root_mount_point / dbpath.lstrip("/") / "sync"
+    return RepositoryDatabaseSampler(sync_directory, [str(item).strip() for item in repositories])
+
+
+def _is_repository_refresh(command):
+    short_options = "".join(
+        argument[1:]
+        for argument in command[1:]
+        if argument.startswith("-") and not argument.startswith("--")
+    )
+    long_options = {argument for argument in command[1:] if argument.startswith("--")}
+    return ("S" in short_options or "--sync" in long_options) and (
+        "y" in short_options or "--refresh" in long_options
+    )
+
+
+def _operations_require_keyring(operations):
+    install_keys = {"install", "try_install", "localInstall"}
+    return any(bool(entry.get(key)) for entry in operations for key in install_keys)
+
+
 # --- Pacman backend only ---
 class PacmanManager:
     backend = "pacman"
@@ -278,6 +305,9 @@ class PacmanManager:
         self.last_output_log_time = 0.0
         self.last_transfer_log_time = 0.0
         self.transaction_started = False
+        self.transaction_tracker = PacmanTransactionTracker()
+        self.current_output = []
+        self.last_activity_emit_time = 0.0
 
         def line_cb(line: str):
             global custom_status_message
@@ -286,11 +316,12 @@ class PacmanManager:
             text = line.strip()
             if not text:
                 return
-            recent_output.append(text)
-            recent_output[:] = recent_output[-200:]
+            self.current_output.append(text)
+            self.current_output[:] = self.current_output[-200:]
+            recent_output[:] = self.current_output
             custom_status_message = "pacman: " + text
 
-            transaction_ratio = parse_transaction_progress(text)
+            transaction_ratio = self.transaction_tracker.observe(text)
             if transaction_ratio is not None:
                 self.transaction_started = True
                 candidate = map_progress(
@@ -299,9 +330,11 @@ class PacmanManager:
                     transaction_ratio,
                 )
                 self.progress_fraction = max(self.progress_fraction, candidate)
-                libcalamares.job.setprogress(self.progress_fraction)
 
             now = time.monotonic()
+            if transaction_ratio is not None or now - self.last_activity_emit_time >= 0.25:
+                libcalamares.job.setprogress(self.progress_fraction)
+                self.last_activity_emit_time = now
             important = text.startswith(("error:", "warning:", "::"))
             if important or now - self.last_output_log_time >= 0.5:
                 libcalamares.utils.debug("pacman: " + text)
@@ -314,6 +347,7 @@ class PacmanManager:
         self.operation_end = max(self.operation_start, float(end))
         self.progress_fraction = max(self.progress_fraction, self.operation_start)
         self.transaction_started = False
+        self.transaction_tracker.reset()
         self.download_end = map_progress(self.operation_start, self.operation_end, 0.72)
         self.transaction_end = map_progress(self.operation_start, self.operation_end, 0.96)
         libcalamares.job.setprogress(self.progress_fraction)
@@ -359,38 +393,66 @@ class PacmanManager:
             libcalamares.utils.debug("pacman: " + custom_status_message)
             self.last_transfer_log_time = now
 
+    def _report_repository_refresh(self, snapshot):
+        global custom_status_message
+        custom_status_message = format_repository_refresh_status(
+            snapshot,
+            _("Refreshing repository databases"),
+        )
+        candidate = map_progress(self.operation_start, self.operation_end, snapshot.ratio)
+        self.progress_fraction = max(self.progress_fraction, candidate)
+        libcalamares.job.setprogress(self.progress_fraction)
+        now = time.monotonic()
+        if now - self.last_transfer_log_time >= 2.0:
+            libcalamares.utils.debug("pacman: " + custom_status_message)
+            self.last_transfer_log_time = now
+
     def run_pacman(self, command, callback=False):
         """Run pacman with best-effort real download telemetry."""
         pacman_count = 0
         while pacman_count <= self.pacman_num_retries:
             pacman_count += 1
             self.transaction_started = False
+            self.transaction_tracker.reset()
+            self.current_output = []
+            recent_output.clear()
             heartbeat_callback = None
             try:
                 if callback:
                     try:
-                        plan = _target_download_plan(command)
-                        if plan is not None and plan.total_bytes > 0:
-                            cache_directories = _target_cache_directories()
-                            sampler = TransferSampler(plan, cache_directories)
+                        if _is_repository_refresh(command):
+                            refresh_sampler = _target_repository_refresh_sampler()
 
                             def heartbeat_callback():
                                 try:
-                                    self._report_transfer(sampler.sample())
+                                    self._report_repository_refresh(refresh_sampler.sample())
                                 except Exception as error:
-                                    libcalamares.utils.warning(f"pacman progress telemetry failed: {error!s}")
+                                    libcalamares.utils.warning(f"pacman repository telemetry failed: {error!s}")
 
                             heartbeat_callback()
-                            libcalamares.utils.debug(
-                                "pacman: planned {} package downloads".format(len(plan.downloads))
-                            )
-                        elif plan is not None:
-                            global custom_status_message
-                            custom_status_message = _("All required packages are cached; applying package changes")
-                            self.progress_fraction = max(self.progress_fraction, self.download_end)
-                            libcalamares.job.setprogress(self.progress_fraction)
+                        else:
+                            plan = _target_download_plan(command)
+                            if plan is not None and plan.total_bytes > 0:
+                                cache_directories = _target_cache_directories()
+                                sampler = TransferSampler(plan, cache_directories)
+
+                                def heartbeat_callback():
+                                    try:
+                                        self._report_transfer(sampler.sample())
+                                    except Exception as error:
+                                        libcalamares.utils.warning(f"pacman progress telemetry failed: {error!s}")
+
+                                heartbeat_callback()
+                                libcalamares.utils.debug(
+                                    "pacman: planned {} package downloads".format(len(plan.downloads))
+                                )
+                            elif plan is not None:
+                                global custom_status_message
+                                custom_status_message = _("All required packages are cached; applying package changes")
+                                self.progress_fraction = max(self.progress_fraction, self.download_end)
+                                libcalamares.job.setprogress(self.progress_fraction)
                     except Exception as error:
-                        libcalamares.utils.warning(f"pacman download telemetry unavailable: {error!s}")
+                        libcalamares.utils.warning(f"pacman package telemetry unavailable: {error!s}")
 
                 localized_command = ["env", "LC_ALL=C", "LANG=C", *command]
                 if callback:
@@ -404,6 +466,8 @@ class PacmanManager:
                     )
                 else:
                     libcalamares.utils.target_env_process_output(localized_command)
+                if heartbeat_callback is not None:
+                    heartbeat_callback()
             except subprocess.CalledProcessError:
                 if pacman_count <= self.pacman_num_retries:
                     continue
@@ -413,6 +477,17 @@ class PacmanManager:
             if callback:
                 libcalamares.job.setprogress(self.progress_fraction)
             return
+
+    def report_package_completion(self):
+        if total_packages <= 0:
+            return
+        candidate = map_progress(
+            self.package_phase_start,
+            1.0,
+            completed_packages * 1.0 / total_packages,
+        )
+        self.progress_fraction = max(self.progress_fraction, candidate)
+        libcalamares.job.setprogress(self.progress_fraction)
 
     def update_db(self):
         command = ["pacman", "-Sy"]
@@ -564,8 +639,7 @@ def run_operations(pkgman: PacmanManager, entry: dict):
             libcalamares.utils.warning("Unknown package-operation key {!s}".format(key))
 
         completed_packages += len(package_list)
-        if total_packages > 0:
-            libcalamares.job.setprogress(completed_packages * 1.0 / total_packages)
+        pkgman.report_package_completion()
 
     group_packages = 0
     _change_mode(None)
@@ -588,30 +662,43 @@ def run():
 
     pkgman = PacmanManager()
 
-    try:
-        _refresh_target_keyring()
-    except Exception as e:
-        libcalamares.utils.warning(f"target keyring refresh failed: {e!s}")
-        return _failure(
-            _("Package signing key setup failed"),
-            _("The target package keyring could not be initialized or populated."),
-            e,
-            "keyring",
-        )
-
     recovery_refresh = bool(libcalamares.globalstorage.value("recovery.refreshRepositories"))
     has_internet = bool(libcalamares.globalstorage.value("hasInternet"))
     update_db = libcalamares.job.configuration.get("update_db", False)
     update_system = libcalamares.job.configuration.get("update_system", False)
 
-    if recovery_refresh:
-        if not has_internet:
+    operations = list(libcalamares.job.configuration.get("operations", []))
+    if libcalamares.globalstorage.contains("packageOperations"):
+        operations += list(libcalamares.globalstorage.value("packageOperations"))
+    operations = [
+        entry
+        for entry in operations
+        if "paru" not in str(entry.get("source", "")).lower()
+        and "flatpak" not in str(entry.get("source", "")).lower()
+    ]
+
+    if recovery_refresh and not has_internet:
+        return _failure(
+            _("Package Manager error"),
+            _("Network is unavailable; the required full repository refresh was not attempted."),
+            RuntimeError("Network is unreachable"),
+            "repository-full-upgrade",
+        )
+
+    needs_keyring = recovery_refresh or (has_internet and (update_db or update_system)) or _operations_require_keyring(operations)
+    if needs_keyring:
+        try:
+            _refresh_target_keyring()
+        except Exception as e:
+            libcalamares.utils.warning(f"target keyring refresh failed: {e!s}")
             return _failure(
-                _("Package Manager error"),
-                _("Network is unavailable; the required full repository refresh was not attempted."),
-                RuntimeError("Network is unreachable"),
-                "repository-full-upgrade",
+                _("Package signing key setup failed"),
+                _("The target package keyring could not be initialized or populated."),
+                e,
+                "keyring",
             )
+
+    if recovery_refresh:
         try:
             pkgman.full_upgrade()
         except subprocess.CalledProcessError as e:
@@ -653,19 +740,6 @@ def run():
                 e,
                 "system-update",
             )
-
-    operations = libcalamares.job.configuration.get("operations", [])
-    if libcalamares.globalstorage.contains("packageOperations"):
-        operations += libcalamares.globalstorage.value("packageOperations")
-
-    # --- FILTER OUT unsupported sources (paru, flatpak) ---
-    filtered_ops = []
-    for entry in operations:
-        src = str(entry.get("source", "")).lower()
-        if "paru" in src or "flatpak" in src:
-            continue
-        filtered_ops.append(entry)
-    operations = filtered_ops
 
     # --- preprocess package lists (drop missing pkgs/groups) ---
     try:

@@ -65,6 +65,33 @@ class PackageProgressTests(unittest.TestCase):
             self.assertAlmostEqual(final.ratio, 1.0)
             self.assertEqual(final.active_packages, ())
 
+    def test_samples_repository_database_refresh_bytes_and_completion(self) -> None:
+        module = load_progress_module()
+        with tempfile.TemporaryDirectory() as temporary:
+            sync = Path(temporary)
+            database = sync / "core.db"
+            database.write_bytes(b"old")
+            sampler = module.RepositoryDatabaseSampler(sync, ["core"])
+
+            partial = sync / "core.db.part"
+            partial.write_bytes(b"x" * 256)
+            first = sampler.sample(now=10.0)
+            self.assertEqual(first.transferred_bytes, 256)
+            self.assertEqual(first.completed_repositories, 0)
+            self.assertEqual(first.active_repositories, ("core",))
+
+            partial.write_bytes(b"x" * 768)
+            second = sampler.sample(now=12.0)
+            self.assertEqual(second.transferred_bytes, 768)
+            self.assertEqual(second.speed_bytes_per_second, 256.0)
+
+            partial.unlink()
+            database.write_bytes(b"new database" * 100)
+            final = sampler.sample(now=13.0)
+            self.assertEqual(final.completed_repositories, 1)
+            self.assertEqual(final.ratio, 1.0)
+            self.assertEqual(final.active_repositories, ())
+
     def test_terminal_decoder_splits_carriage_returns_and_newlines(self) -> None:
         module = load_progress_module()
         decoder = module.TerminalFrameDecoder()
@@ -101,6 +128,22 @@ class PackageProgressTests(unittest.TestCase):
             module.parse_transaction_progress("( 42/100) 正在安装软件包"), 0.42
         )
         self.assertIsNone(module.parse_transaction_progress("downloading linux"))
+
+    def test_transaction_tracker_does_not_finish_on_short_check_stage(self) -> None:
+        module = load_progress_module()
+        tracker = module.PacmanTransactionTracker()
+
+        key_complete = tracker.observe("( 2/2) checking keys in keyring")
+        install_start = tracker.observe("( 1/120) installing linux")
+        install_middle = tracker.observe("( 60/120) installing systemd")
+        self.assertIsNone(tracker.observe(":: Running post-transaction hooks..."))
+        hook_complete = tracker.observe("( 4/4) Updating icon theme caches...")
+
+        self.assertIsNotNone(key_complete)
+        self.assertLess(key_complete, 0.20)
+        self.assertGreaterEqual(install_start, key_complete)
+        self.assertGreater(install_middle, install_start)
+        self.assertEqual(hook_complete, 1.0)
 
     def test_maps_download_ratio_into_real_job_phase(self) -> None:
         module = load_progress_module()
