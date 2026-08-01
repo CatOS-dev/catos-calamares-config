@@ -51,7 +51,6 @@
         - wps-office-cn
         - wps-office-mime-cn
         - wps-office-mui-zh-cn
-        - ttf-wps-fonts
     - name: "OnlyOffice"
       description: "OnlyOffice"
       selected: false
