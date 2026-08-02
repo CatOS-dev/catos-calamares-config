@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+import re
+
 from .base import (
     BootloaduError,
     Provider,
@@ -29,6 +32,8 @@ class LimineProvider(Provider):
         )
         run_target(["limine-install"], "install Limine")
         run_target(["limine-update"], "generate Limine kernel entries")
+        set_global_option(self.context.esp_path / "limine.conf", "remember_last_entry", "yes")
+        run_target(["catos-limine-theme", "apply"], "apply CatOS Limine theme")
 
     def setup_snapshots(self) -> None:
         setup_snapper(self.context)
@@ -55,3 +60,17 @@ class LimineProvider(Provider):
             raise BootloaduError("Limine did not deploy any bootable kernel assets")
 
         run_target(["limine-list"], "verify Limine configuration tree")
+
+
+def set_global_option(path: Path, key: str, value: str) -> None:
+    if not path.is_file():
+        raise BootloaduError(f"Limine configuration was not generated: {path}")
+    lines = path.read_text(encoding="utf-8").splitlines()
+    option = re.compile(rf"^\s*{re.escape(key)}\s*:")
+    retained = [line for line in lines if not option.match(line)]
+    insertion = next(
+        (index for index, line in enumerate(retained) if line.startswith("/")),
+        len(retained),
+    )
+    retained.insert(insertion, f"{key}: {value}")
+    write_text(path, "\n".join(retained) + "\n")

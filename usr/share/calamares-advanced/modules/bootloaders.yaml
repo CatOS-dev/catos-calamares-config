@@ -50,11 +50,28 @@ providers:
     packages:
       - limine
       - limine-tool
+      - catos-limine-theme
     kernelPackages: [linux, linux-headers]
     snapshots:
       manager: snapper
       requiredFileSystems: [btrfs]
       packages: [limine-btrfs]
+  refind:
+    displayName: rEFInd
+    platforms:
+      - firmware: efi
+        architectures: [x86_64]
+    partition:
+      efi:
+        mountPoint: /boot/efi
+        recommendedSize: 512MiB
+        minimumSize: 300MiB
+      requiredPartitionTableType: [gpt]
+      biosBootPartition: never
+    packages:
+      - refind
+    kernelPackages: [linux, linux-headers]
+    snapshots: null
   systemd-boot:
     displayName: systemd-boot
     platforms:

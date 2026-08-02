@@ -20,8 +20,11 @@ from providers import base as boot_base  # noqa: E402
 from providers.firmware import FirmwareProvider  # noqa: E402
 from providers.grub import GrubProvider  # noqa: E402
 from providers.limine import LimineProvider  # noqa: E402
+from providers.refind import RefindProvider  # noqa: E402
 from providers.systemd_boot import SystemdBootProvider  # noqa: E402
 import providers.grub as grub_provider  # noqa: E402
+import providers.limine as limine_provider  # noqa: E402
+import providers.refind as refind_provider  # noqa: E402
 import providers.systemd_boot as systemd_boot_provider  # noqa: E402
 from registry import (  # noqa: E402
     RegistryError,
@@ -44,10 +47,30 @@ class BootloaduTests(unittest.TestCase):
             root_filesystem="btrfs",
         )
         self.assertIn("limine-tool", plan)
+        self.assertIn("catos-limine-theme", plan)
         self.assertIn("limine-btrfs", plan)
         self.assertIn("snapper", plan)
         self.assertNotIn("snap-pac", plan)
         self.assertEqual(len(plan), len(set(plan)))
+
+    def test_refind_package_plan_installs_the_boot_manager_without_snapshot_support(self):
+        plan = package_plan(
+            self.registry,
+            "refind",
+            snapshots_enabled=False,
+            root_filesystem="btrfs",
+            firmware="efi",
+        )
+        self.assertIn("refind", plan)
+        self.assertNotIn("refind-btrfs", plan)
+        with self.assertRaises(RegistryError):
+            package_plan(
+                self.registry,
+                "refind",
+                snapshots_enabled=True,
+                root_filesystem="btrfs",
+                firmware="efi",
+            )
 
     def test_grub_snapshot_plan_installs_watcher_dependency(self):
         plan = package_plan(
@@ -89,6 +112,10 @@ class BootloaduTests(unittest.TestCase):
         self.assertTrue(platform_supported(limine, "efi", "x86_64"))
         self.assertFalse(platform_supported(limine, "bios", "x86_64"))
         self.assertFalse(platform_supported(limine, "efi", "aarch64"))
+        refind = self.registry["providers"]["refind"]
+        self.assertTrue(platform_supported(refind, "efi", "x86_64"))
+        self.assertFalse(platform_supported(refind, "bios", "x86_64"))
+        self.assertFalse(platform_supported(refind, "efi", "aarch64"))
 
     def test_snapshot_provider_appends_matching_overlayfs_hook(self):
         expected = {
@@ -230,6 +257,108 @@ class BootloaduTests(unittest.TestCase):
             commands = [call.args[0] for call in run_target.call_args_list]
             self.assertIn(["/run/calamares/adjust_grub_theme_after.sh"], commands)
             self.assertNotIn([str(script)], commands)
+
+    def test_limine_install_applies_the_theme_and_enables_last_entry_memory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            esp = root / "boot/efi"
+            esp.mkdir(parents=True)
+            (esp / "limine.conf").write_text(
+                "timeout: 3\nremember_last_entry: no\n/CatOS\nprotocol: linux\n",
+                encoding="utf-8",
+            )
+            context = types.SimpleNamespace(
+                root=root,
+                branding_name="CatOS",
+                esp_mount_point="/boot/efi",
+                esp_path=esp,
+                target_path=lambda path: root / str(path).lstrip("/"),
+            )
+            provider = LimineProvider.__new__(LimineProvider)
+            provider.context = context
+            provider.profile = {}
+            provider.cmdline = "quiet rw"
+            with mock.patch.object(limine_provider, "run_target") as run_target:
+                provider.execute()
+
+            rendered = (esp / "limine.conf").read_text(encoding="utf-8")
+            active = [
+                line.strip()
+                for line in rendered.splitlines()
+                if line.strip().startswith("remember_last_entry:")
+            ]
+            self.assertEqual(active, ["remember_last_entry: yes"])
+            self.assertIn("/CatOS\nprotocol: linux\n", rendered)
+            commands = [call.args[0] for call in run_target.call_args_list]
+            self.assertEqual(commands[:2], [["limine-install"], ["limine-update"]])
+            self.assertIn(["catos-limine-theme", "apply"], commands)
+
+    def test_refind_provider_generates_boot_options_from_the_target_context(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            esp = root / "boot/efi"
+            esp.mkdir(parents=True)
+            boot = root / "boot"
+            boot.mkdir(exist_ok=True)
+            kernel = boot_base.Kernel(
+                version="6.18.0-catos",
+                package="linux-cachyos",
+                image="/usr/lib/modules/6.18.0-catos/vmlinuz",
+                initramfs="/boot/initramfs-linux-cachyos.img",
+            )
+            context = types.SimpleNamespace(
+                root=root,
+                branding_name="CatOS",
+                esp_mount_point="/boot/efi",
+                esp_path=esp,
+                target_path=lambda path: root / str(path).lstrip("/"),
+            )
+            provider = RefindProvider.__new__(RefindProvider)
+            provider.context = context
+            provider.profile = {}
+            provider.cmdline = "quiet rw root=UUID=abcd rootflags=subvol=@"
+            with mock.patch.object(refind_provider, "build_initramfs", return_value=[kernel]), \
+                 mock.patch.object(refind_provider, "run_target") as run_target:
+                provider.execute()
+
+            options = (boot / "refind_linux.conf").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(options), 3)
+            self.assertIn(provider.cmdline, options[0])
+            self.assertIn("single", options[1])
+            self.assertEqual(options[2], '"Boot with minimal options" "ro root=UUID=abcd rootflags=subvol=@"')
+            commands = [call.args[0] for call in run_target.call_args_list]
+            self.assertEqual(commands[0], ["refind-install", "--yes"])
+
+    def test_refind_verify_requires_a_boot_manager_and_bootable_kernel(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            esp = root / "boot/efi"
+            refind = esp / "EFI/refind"
+            refind.mkdir(parents=True)
+            (refind / "refind_x64.efi").write_bytes(b"efi")
+            (refind / "refind.conf").write_text("timeout 5\n", encoding="utf-8")
+            (root / "boot").mkdir(exist_ok=True)
+            (root / "boot/refind_linux.conf").write_text(
+                '"Boot with standard options" "quiet rw root=UUID=abcd"\n',
+                encoding="utf-8",
+            )
+            modules = root / "usr/lib/modules/6.18.0-catos"
+            modules.mkdir(parents=True)
+            (modules / "pkgbase").write_text("linux-cachyos\n", encoding="utf-8")
+            (modules / "vmlinuz").write_bytes(b"kernel")
+            context = types.SimpleNamespace(
+                esp_path=esp,
+                target_path=lambda path: root / str(path).lstrip("/"),
+            )
+            provider = RefindProvider.__new__(RefindProvider)
+            provider.context = context
+            provider.profile = {}
+            provider.cmdline = "quiet rw root=UUID=abcd"
+            with self.assertRaises(boot_base.BootloaduError):
+                provider.verify()
+            (root / "boot/vmlinuz-linux-cachyos").write_bytes(b"kernel")
+            (root / "boot/initramfs-linux-cachyos.img").write_bytes(b"initramfs")
+            provider.verify()
 
     def test_limine_verify_requires_deployed_kernel_assets(self):
         with tempfile.TemporaryDirectory() as temporary:

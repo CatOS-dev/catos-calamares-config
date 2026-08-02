@@ -54,15 +54,19 @@ class SecureBootTests(unittest.TestCase):
             self.assertFalse(secure_boot_enabled(root))
 
 
-    def test_prepare_secure_boot_supports_uki_and_rejects_efistub(self):
+    def test_prepare_secure_boot_supports_uki_and_rejects_unsupported_providers(self):
         storage = Storage()
         supported = types.SimpleNamespace(provider_id="uki", firmware="efi")
-        unsupported = types.SimpleNamespace(provider_id="efistub", firmware="efi")
         with mock.patch.object(secureboot_module, "secure_boot_enabled", return_value=True):
             self.assertTrue(prepare_secure_boot(storage, self.registry, supported))
             self.assertTrue(storage.value("secureboot.enabled"))
-            with self.assertRaises(RegistryError):
-                prepare_secure_boot(Storage(), self.registry, unsupported)
+            for provider_id in ("efistub", "refind"):
+                with self.subTest(provider=provider_id), self.assertRaises(RegistryError):
+                    prepare_secure_boot(
+                        Storage(),
+                        self.registry,
+                        types.SimpleNamespace(provider_id=provider_id, firmware="efi"),
+                    )
 
     def test_package_plan_adds_secure_boot_package_only_when_active(self):
         disabled = package_plan(
@@ -84,7 +88,7 @@ class SecureBootTests(unittest.TestCase):
         self.assertNotIn("catos-secureboot", disabled)
         self.assertIn("catos-secureboot", enabled)
 
-    def test_secure_boot_supports_direct_uki_but_rejects_efistub(self):
+    def test_secure_boot_supports_direct_uki_but_rejects_unsupported_providers(self):
         enabled = package_plan(
             self.registry,
             "uki",
@@ -94,15 +98,16 @@ class SecureBootTests(unittest.TestCase):
             secure_boot_enabled=True,
         )
         self.assertIn("catos-secureboot", enabled)
-        with self.assertRaises(RegistryError):
-            package_plan(
-                self.registry,
-                "efistub",
-                snapshots_enabled=False,
-                root_filesystem="ext4",
-                firmware="efi",
-                secure_boot_enabled=True,
-            )
+        for provider_id in ("efistub", "refind"):
+            with self.subTest(provider=provider_id), self.assertRaises(RegistryError):
+                package_plan(
+                    self.registry,
+                    provider_id,
+                    snapshots_enabled=False,
+                    root_filesystem="ext4",
+                    firmware="efi",
+                    secure_boot_enabled=True,
+                )
 
     def test_finalizer_enables_target_and_preserves_private_result(self):
         storage = Storage({"secureboot.enabled": True})
