@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+import shlex
 import sys
 import tempfile
 import types
@@ -33,6 +34,40 @@ from registry import (  # noqa: E402
     package_plan,
     platform_supported,
 )
+
+def parse_limine_semantics(source: str) -> tuple[dict[str, str], list[dict[str, object]]]:
+    global_options: dict[str, str] = {}
+    entries: list[dict[str, object]] = []
+    current: dict[str, object] | None = None
+    for raw_line in source.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("/"):
+            current = {"name": line.lstrip("/"), "options": {}}
+            entries.append(current)
+            continue
+        if ":" not in line:
+            continue
+        key, value = (part.strip() for part in line.split(":", 1))
+        if current is None:
+            global_options[key] = value
+        else:
+            options = current["options"]
+            assert isinstance(options, dict)
+            options[key] = value
+    return global_options, entries
+
+
+def parse_refind_boot_options(source: str) -> dict[str, list[str]]:
+    parsed: dict[str, list[str]] = {}
+    for line in source.splitlines():
+        fields = shlex.split(line)
+        if len(fields) != 2:
+            raise AssertionError(f"invalid rEFInd boot option: {line}")
+        parsed[fields[0]] = shlex.split(fields[1])
+    return parsed
+
 
 class BootloaduTests(unittest.TestCase):
     @classmethod
@@ -282,13 +317,10 @@ class BootloaduTests(unittest.TestCase):
                 provider.execute()
 
             rendered = (esp / "limine.conf").read_text(encoding="utf-8")
-            active = [
-                line.strip()
-                for line in rendered.splitlines()
-                if line.strip().startswith("remember_last_entry:")
-            ]
-            self.assertEqual(active, ["remember_last_entry: yes"])
-            self.assertIn("/CatOS\nprotocol: linux\n", rendered)
+            global_options, entries = parse_limine_semantics(rendered)
+            self.assertEqual(global_options["remember_last_entry"], "yes")
+            self.assertEqual(entries[0]["name"], "CatOS")
+            self.assertEqual(entries[0]["options"], {"protocol": "linux"})
             commands = [call.args[0] for call in run_target.call_args_list]
             self.assertEqual(commands[:2], [["limine-install"], ["limine-update"]])
             self.assertIn(["catos-limine-theme", "apply"], commands)
@@ -321,11 +353,19 @@ class BootloaduTests(unittest.TestCase):
                  mock.patch.object(refind_provider, "run_target") as run_target:
                 provider.execute()
 
-            options = (boot / "refind_linux.conf").read_text(encoding="utf-8").splitlines()
-            self.assertEqual(len(options), 3)
-            self.assertIn(provider.cmdline, options[0])
-            self.assertIn("single", options[1])
-            self.assertEqual(options[2], '"Boot with minimal options" "ro root=UUID=abcd rootflags=subvol=@"')
+            options = parse_refind_boot_options(
+                (boot / "refind_linux.conf").read_text(encoding="utf-8")
+            )
+            standard = options["Boot with standard options"]
+            single_user = options["Boot to single-user mode"]
+            minimal = options["Boot with minimal options"]
+            self.assertEqual(standard, shlex.split(provider.cmdline))
+            self.assertEqual(single_user[:-1], standard)
+            self.assertEqual(single_user[-1], "single")
+            self.assertEqual(
+                minimal,
+                ["ro", "root=UUID=abcd", "rootflags=subvol=@"],
+            )
             commands = [call.args[0] for call in run_target.call_args_list]
             self.assertEqual(commands[0], ["refind-install", "--yes"])
 
