@@ -33,6 +33,7 @@ from package_progress import (
     build_pacman_plan_command,
     format_repository_refresh_status,
     format_transfer_status,
+    is_download_start,
     map_progress,
     parse_download_plan,
 )
@@ -293,6 +294,8 @@ class PacmanManager:
         self.transaction_end = 0.96
         self.last_output_log_time = 0.0
         self.last_transfer_log_time = 0.0
+        self.download_started = False
+        self.download_baseline_bytes = 0
         self.transaction_started = False
         self.transaction_tracker = PacmanTransactionTracker()
         self.current_output = []
@@ -310,9 +313,13 @@ class PacmanManager:
             recent_output[:] = self.current_output
             custom_status_message = "pacman: " + text
 
+            if is_download_start(text):
+                self.download_started = True
+
             transaction_ratio = self.transaction_tracker.observe(text)
-            if transaction_ratio is not None:
+            if self.transaction_tracker.started:
                 self.transaction_started = True
+            if transaction_ratio is not None:
                 candidate = map_progress(
                     self.download_end,
                     self.transaction_end,
@@ -335,6 +342,8 @@ class PacmanManager:
         self.operation_start = max(self.package_phase_start, float(start))
         self.operation_end = max(self.operation_start, float(end))
         self.progress_fraction = max(self.progress_fraction, self.operation_start)
+        self.download_started = False
+        self.download_baseline_bytes = 0
         self.transaction_started = False
         self.transaction_tracker.reset()
         self.download_end = map_progress(self.operation_start, self.operation_end, 0.72)
@@ -369,6 +378,10 @@ class PacmanManager:
         global custom_status_message
         if self.transaction_started:
             return
+        if not self.download_started:
+            if snapshot.downloaded_bytes <= self.download_baseline_bytes:
+                return
+            self.download_started = True
         custom_status_message = format_transfer_status(snapshot, _("Downloading packages"))
         candidate = map_progress(
             self.operation_start,
@@ -398,9 +411,13 @@ class PacmanManager:
 
     def run_pacman(self, command, callback=False):
         """Run pacman with best-effort real download telemetry."""
+        global custom_status_message
+
         pacman_count = 0
         while pacman_count <= self.pacman_num_retries:
             pacman_count += 1
+            self.download_started = False
+            self.download_baseline_bytes = 0
             self.transaction_started = False
             self.transaction_tracker.reset()
             self.current_output = []
@@ -424,21 +441,36 @@ class PacmanManager:
                             if plan is not None and plan.total_bytes > 0:
                                 cache_directories = _target_cache_directories()
                                 sampler = TransferSampler(plan, cache_directories)
+                                initial_snapshot = sampler.sample()
+                                self.download_baseline_bytes = initial_snapshot.downloaded_bytes
+                                if initial_snapshot.downloaded_bytes < initial_snapshot.total_bytes:
+                                    custom_status_message = _("Preparing package downloads")
+                                    libcalamares.job.setprogress(self.progress_fraction)
 
-                                def heartbeat_callback():
-                                    try:
-                                        self._report_transfer(sampler.sample())
-                                    except Exception as error:
-                                        libcalamares.utils.warning(f"pacman progress telemetry failed: {error!s}")
+                                    def heartbeat_callback():
+                                        try:
+                                            self._report_transfer(sampler.sample())
+                                        except Exception as error:
+                                            libcalamares.utils.warning(
+                                                f"pacman progress telemetry failed: {error!s}"
+                                            )
 
-                                heartbeat_callback()
-                                libcalamares.utils.debug(
-                                    "pacman: planned {} package downloads".format(len(plan.downloads))
-                                )
+                                    libcalamares.utils.debug(
+                                        "pacman: planned {} package downloads".format(
+                                            len(plan.downloads)
+                                        )
+                                    )
+                                else:
+                                    custom_status_message = _("Applying package changes")
+                                    self.progress_fraction = max(
+                                        self.progress_fraction, self.download_end
+                                    )
+                                    libcalamares.job.setprogress(self.progress_fraction)
                             elif plan is not None:
-                                global custom_status_message
-                                custom_status_message = _("All required packages are cached; applying package changes")
-                                self.progress_fraction = max(self.progress_fraction, self.download_end)
+                                custom_status_message = _("Checking package changes")
+                                self.progress_fraction = max(
+                                    self.progress_fraction, self.download_end
+                                )
                                 libcalamares.job.setprogress(self.progress_fraction)
                     except Exception as error:
                         libcalamares.utils.warning(f"pacman package telemetry unavailable: {error!s}")

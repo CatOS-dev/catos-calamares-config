@@ -517,6 +517,137 @@ class PackageOutputTests(unittest.TestCase):
         self.assertGreaterEqual(max(progresses), 0.95)
         self.assertEqual(progresses, sorted(progresses))
 
+    def test_pacman_needed_noop_skips_download_phase(self) -> None:
+        fake = FakeCalamares()
+        fake.module.job.configuration = {"pacman": {"num_retries": 0, "needed_only": True}}
+        fake.storage.insert("rootMountPoint", "/tmp")
+        actual_heartbeats: list[object] = []
+        plan_commands: list[list[str]] = []
+
+        def process_output(arguments, callback=None, *extra):
+            if "--print-format" in arguments:
+                plan_commands.append(list(arguments))
+                return 0
+            actual_heartbeats.append(extra[-1])
+            callback("warning: linux is up to date -- skipping")
+            callback(" there is nothing to do")
+            return 0
+
+        fake.utils.target_env_process_output = process_output
+        module = load_module(
+            "catos_test_pacman_needed_noop",
+            "usr/lib/calamares/modules/pacman/main.py",
+            fake,
+            {"pkgcheck": module_stub("pkgcheck")},
+        )
+        statuses: list[str | None] = []
+        fake.module.job.setprogress = lambda _progress: statuses.append(module.custom_status_message)
+        module.total_packages = 1
+        module.group_packages = 1
+        manager = module.PacmanManager()
+
+        manager.install(["linux"])
+
+        self.assertEqual(len(plan_commands), 1)
+        self.assertIn("--needed", plan_commands[0])
+        self.assertEqual(actual_heartbeats, [None])
+        self.assertFalse(any((status or "").startswith("Downloading packages") for status in statuses))
+
+    def test_pacman_cached_packages_skip_download_heartbeat(self) -> None:
+        fake = FakeCalamares()
+        fake.module.job.configuration = {"pacman": {"num_retries": 0}}
+        actual_heartbeats: list[object] = []
+
+        with tempfile.TemporaryDirectory() as temporary:
+            fake.storage.insert("rootMountPoint", temporary)
+            cache = Path(temporary) / "var/cache/pacman/pkg"
+            cache.mkdir(parents=True)
+            (cache / "linux.pkg.tar.zst").write_bytes(b"x" * 1024)
+
+            def process_output(arguments, callback=None, *extra):
+                if "--print-format" in arguments:
+                    callback.append(
+                        "linux\t6.15-1\t1024\thttps://repo.example/linux.pkg.tar.zst\n"
+                    )
+                    return 0
+                if arguments[:2] == ["pacman-conf", "CacheDir"]:
+                    callback.append("/var/cache/pacman/pkg\n")
+                    return 0
+                actual_heartbeats.append(extra[-1])
+                callback(":: Checking keys in keyring...")
+                callback("( 1/1) installing linux")
+                return 0
+
+            fake.utils.target_env_process_output = process_output
+            module = load_module(
+                "catos_test_pacman_cached_downloads",
+                "usr/lib/calamares/modules/pacman/main.py",
+                fake,
+                {"pkgcheck": module_stub("pkgcheck")},
+            )
+            statuses: list[str | None] = []
+            fake.module.job.setprogress = lambda _progress: statuses.append(module.custom_status_message)
+            module.total_packages = 1
+            module.group_packages = 1
+            manager = module.PacmanManager()
+
+            manager.install(["linux"])
+
+        self.assertEqual(actual_heartbeats, [None])
+        self.assertFalse(any((status or "").startswith("Downloading packages") for status in statuses))
+
+    def test_pacman_transaction_banner_stops_download_status_updates(self) -> None:
+        fake = FakeCalamares()
+        fake.module.job.configuration = {"pacman": {"num_retries": 0}}
+
+        with tempfile.TemporaryDirectory() as temporary:
+            fake.storage.insert("rootMountPoint", temporary)
+            cache = Path(temporary) / "var/cache/pacman/pkg"
+            cache.mkdir(parents=True)
+
+            def process_output(arguments, callback=None, *extra):
+                if "--print-format" in arguments:
+                    callback.append(
+                        "linux\t6.15-1\t1024\thttps://repo.example/linux.pkg.tar.zst\n"
+                    )
+                    return 0
+                if arguments[:2] == ["pacman-conf", "CacheDir"]:
+                    callback.append("/var/cache/pacman/pkg\n")
+                    return 0
+                heartbeat = extra[-1]
+                self.assertTrue(callable(heartbeat))
+                heartbeat()
+                self.assertFalse(
+                    (module.custom_status_message or "").startswith("Downloading packages")
+                )
+                callback(":: Retrieving packages...")
+                (cache / "linux.pkg.tar.zst.part").write_bytes(b"x" * 512)
+                heartbeat()
+                (cache / "linux.pkg.tar.zst.part").unlink()
+                (cache / "linux.pkg.tar.zst").write_bytes(b"x" * 1024)
+                heartbeat()
+                callback(":: Processing package changes...")
+                heartbeat()
+                return 0
+
+            fake.utils.target_env_process_output = process_output
+            module = load_module(
+                "catos_test_pacman_phase_transition",
+                "usr/lib/calamares/modules/pacman/main.py",
+                fake,
+                {"pkgcheck": module_stub("pkgcheck")},
+            )
+            statuses: list[str | None] = []
+            fake.module.job.setprogress = lambda _progress: statuses.append(module.custom_status_message)
+            module.total_packages = 1
+            module.group_packages = 1
+            manager = module.PacmanManager()
+
+            manager.install(["linux"])
+
+        self.assertTrue(any((status or "").startswith("Downloading packages") for status in statuses))
+        self.assertFalse((module.custom_status_message or "").startswith("Downloading packages"))
+
     def test_pacman_telemetry_failure_does_not_fail_package_install(self) -> None:
         fake = FakeCalamares()
         fake.module.job.configuration = {"pacman": {"num_retries": 0}}
@@ -736,6 +867,73 @@ class PackageOutputTests(unittest.TestCase):
 
         self.assertNotIn("old.example", result[1])
         self.assertIn("could not satisfy dependencies", result[1])
+
+    def test_pacstrap_cached_packages_skip_download_heartbeat(self) -> None:
+        fake = FakeCalamares()
+        registry_error = type("RegistryError", (Exception,), {})
+        fake.module.job.configuration = {
+            "basePackages": ["base"],
+            "requiredPackages": [],
+            "postInstallFiles": [],
+            "requiredPostInstallFiles": [],
+            "requiredPostInstallExecutables": [],
+            "sync_db": False,
+        }
+        module = load_module(
+            "catos_test_pacstrap_cached_downloads",
+            "usr/lib/calamares/modules/pacstrap/main.py",
+            fake,
+            {
+                "pkgcheck": module_stub(
+                    "pkgcheck",
+                    filter_operation_list=lambda _key, items, _packages, _groups: list(items),
+                ),
+                "pacstrap_repository": module_stub(
+                    "pacstrap_repository",
+                    CACHYOS_SELECTION="cachyos",
+                    install_repository_config=lambda *_args, **_kwargs: None,
+                    pacman_config_for=lambda *_args, **_kwargs: "/etc/pacman.conf",
+                    transform_packages=lambda packages, _selection: list(packages),
+                ),
+                "secureboot": module_stub("secureboot", secure_boot_enabled=lambda: False),
+                "registry": module_stub(
+                    "registry",
+                    RegistryError=registry_error,
+                    load_bootloader_registry=lambda: {},
+                    missing_required_packages=lambda *_args: [],
+                    package_plan=lambda *_args, **_kwargs: [],
+                ),
+            },
+        )
+        statuses: list[str | None] = []
+        fake.module.job.setprogress = lambda _progress: statuses.append(module.custom_status_message)
+        heartbeats: list[object] = []
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = root / "var/cache/pacman/pkg"
+            cache.mkdir(parents=True)
+            (cache / "base.pkg.tar.zst").write_bytes(b"x" * 1024)
+            fake.storage.insert("rootMountPoint", temporary)
+            fake.storage.insert("packagechooser_repository", "catos")
+            fake.storage.insert("hasInternet", False)
+            module._build_repo_index_host = lambda _config: ({"base"}, set())
+            plan = module.parse_download_plan(
+                ["base\t1-1\t1024\thttps://repo.example/base.pkg.tar.zst"]
+            )
+            module._download_plan = lambda *_args: (plan, cache)
+
+            def run_in_host(_command, callback, heartbeat=None):
+                heartbeats.append(heartbeat)
+                callback(":: Checking keys in keyring...")
+                callback("( 1/1) installing base")
+
+            module.run_in_host = run_in_host
+            result = module.run()
+
+        self.assertIsNone(result)
+        self.assertEqual(heartbeats, [None])
+        self.assertFalse(any((status or "").startswith("Downloading packages") for status in statuses))
 
     def test_pacstrap_telemetry_fallback_keeps_progress_monotonic(self) -> None:
         fake = FakeCalamares()

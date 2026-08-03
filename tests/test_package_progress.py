@@ -131,6 +131,21 @@ class PackageProgressTests(unittest.TestCase):
         )
         self.assertIsNone(module.parse_transaction_progress("downloading linux"))
 
+    def test_detects_actual_download_phase_markers(self) -> None:
+        module = load_progress_module()
+
+        self.assertFalse(module.is_download_start("resolving dependencies..."))
+        self.assertTrue(module.is_download_start(":: Retrieving packages..."))
+        self.assertTrue(module.is_download_start("linux-6.15-1-x86_64 downloading..."))
+
+    def test_transaction_tracker_marks_stage_start_before_numeric_progress(self) -> None:
+        module = load_progress_module()
+        tracker = module.PacmanTransactionTracker()
+
+        self.assertFalse(tracker.started)
+        self.assertIsNone(tracker.observe(":: Checking keys in keyring..."))
+        self.assertTrue(tracker.started)
+
     def test_transaction_tracker_does_not_finish_on_short_check_stage(self) -> None:
         module = load_progress_module()
         tracker = module.PacmanTransactionTracker()

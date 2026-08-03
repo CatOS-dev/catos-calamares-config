@@ -95,6 +95,12 @@ def map_progress(start: float, end: float, ratio: float) -> float:
     return float(start) + (float(end) - float(start)) * bounded
 
 
+def is_download_start(frame: str) -> bool:
+    """Return whether pacman output has entered the actual retrieval phase."""
+    text = _ANSI_ESCAPE.sub("", str(frame)).strip().lower()
+    return "retrieving packages" in text or text.endswith("downloading...")
+
+
 def parse_transaction_progress(frame: str) -> float | None:
     text = _ANSI_ESCAPE.sub("", str(frame)).lstrip()
     match = _TRANSACTION_PROGRESS.match(text)
@@ -117,7 +123,18 @@ class PacmanTransactionTracker:
         (("loading package files",), 0.11, 0.15),
         (("checking for file conflicts",), 0.15, 0.18),
         (("checking available disk space",), 0.18, 0.20),
-        (("installing ", "upgrading ", "reinstalling ", "downgrading ", "removing "), 0.20, 0.90),
+        (
+            (
+                "processing package changes",
+                "installing ",
+                "upgrading ",
+                "reinstalling ",
+                "downgrading ",
+                "removing ",
+            ),
+            0.20,
+            0.90,
+        ),
         (("running post-transaction hooks",), 0.90, 1.00),
     )
 
@@ -128,6 +145,11 @@ class PacmanTransactionTracker:
     @property
     def progress(self) -> float:
         return self._progress
+
+    @property
+    def started(self) -> bool:
+        """Return whether pacman has entered a transaction stage."""
+        return self._active_stage is not None
 
     def reset(self) -> None:
         self._progress = 0.0

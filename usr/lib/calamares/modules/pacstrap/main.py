@@ -37,6 +37,7 @@ from package_progress import (  # noqa: E402
     TransferSampler,
     format_repository_refresh_status,
     format_transfer_status,
+    is_download_start,
     map_progress,
     parse_download_plan,
 )
@@ -278,6 +279,10 @@ def _transfer_reporter(progress_start, progress_end, phase_state):
         global custom_status_message
         if phase_state["transaction_started"]:
             return
+        if not phase_state["download_started"]:
+            if snapshot.downloaded_bytes <= phase_state["download_baseline_bytes"]:
+                return
+            phase_state["download_started"] = True
         custom_status_message = format_transfer_status(snapshot, _("Downloading packages"))
         last_progress = max(last_progress, map_progress(progress_start, progress_end, snapshot.ratio))
         phase_state["progress"] = max(phase_state["progress"], last_progress)
@@ -541,28 +546,36 @@ def run():
         root_mount_point,
     ] + base_packages
     heartbeat_func = None
-    phase_state = {"transaction_started": False, "progress": 0.05}
+    phase_state = {
+        "download_started": False,
+        "download_baseline_bytes": 0,
+        "transaction_started": False,
+        "progress": 0.05,
+    }
     transaction_tracker = PacmanTransactionTracker()
     try:
         plan, cache_directory = _download_plan(pacman_config, root_mount_point, base_packages)
         if plan.total_bytes > 0:
-            custom_status_message = _("Preparing package downloads")
-            libcalamares.job.setprogress(0.05)
             sampler = TransferSampler(plan, [cache_directory])
-            reporter = _transfer_reporter(0.05, 0.78, phase_state)
-            heartbeat_func = lambda: reporter(sampler.sample())
-            heartbeat_func()
-            libcalamares.utils.debug(
-                "pacstrap: planned {} package downloads ({})".format(
-                    len(plan.downloads),
-                    format_transfer_status(
-                        TransferSampler(plan, [cache_directory]).sample(),
-                        _("Download plan"),
-                    ),
+            initial_snapshot = sampler.sample()
+            phase_state["download_baseline_bytes"] = initial_snapshot.downloaded_bytes
+            if initial_snapshot.downloaded_bytes < initial_snapshot.total_bytes:
+                custom_status_message = _("Preparing package downloads")
+                libcalamares.job.setprogress(0.05)
+                reporter = _transfer_reporter(0.05, 0.78, phase_state)
+                heartbeat_func = lambda: reporter(sampler.sample())
+                libcalamares.utils.debug(
+                    "pacstrap: planned {} package downloads ({})".format(
+                        len(plan.downloads),
+                        format_transfer_status(initial_snapshot, _("Download plan")),
+                    )
                 )
-            )
+            else:
+                custom_status_message = _("Installing cached packages")
+                phase_state["progress"] = max(phase_state["progress"], 0.78)
+                libcalamares.job.setprogress(phase_state["progress"])
         else:
-            custom_status_message = _("All required packages are cached; installing packages")
+            custom_status_message = _("Checking package changes")
             phase_state["progress"] = max(phase_state["progress"], 0.78)
             libcalamares.job.setprogress(phase_state["progress"])
     except Exception as error:
@@ -571,9 +584,12 @@ def run():
 
     def install_output(frame):
         line_cb(frame)
+        if is_download_start(frame):
+            phase_state["download_started"] = True
         transaction_ratio = transaction_tracker.observe(frame)
-        if transaction_ratio is not None:
+        if transaction_tracker.started:
             phase_state["transaction_started"] = True
+        if transaction_ratio is not None:
             phase_state["progress"] = max(
                 phase_state["progress"],
                 map_progress(0.80, 0.96, transaction_ratio),
