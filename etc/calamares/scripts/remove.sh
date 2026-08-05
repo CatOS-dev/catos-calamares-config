@@ -30,23 +30,10 @@ _remove_pacman_packages() {
   return 0
 }
 
-_remove_pacman_packages_individually() {
-  local package
-
-  for package in "$@"; do
-    _remove_pacman_packages "$package"
-  done
-}
-
 _clean_vm_packages() {
   if pacman -Qq virtualbox-guest-utils > /dev/null 2>&1; then
     systemctl disable vboxservice.service || true
     _remove_pacman_packages virtualbox-guest-utils
-  fi
-
-  if pacman -Qq virtualbox-guest-utils-nox > /dev/null 2>&1; then
-    systemctl disable vboxservice.service || true
-    _remove_pacman_packages virtualbox-guest-utils-nox
   fi
 
   rm -f /etc/xdg/autostart/vmware-user.desktop
@@ -66,7 +53,7 @@ _clean_live_packages() {
   local -a live_packages=(
     gparted
     edk2-shell
-    gpart
+    archinstall
     arch-install-scripts
     syslinux
     clonezilla
@@ -89,7 +76,11 @@ _clean_live_packages() {
     echo "warning: NVIDIA detection failed; keeping NVIDIA packages" >&2
   fi
 
-  _remove_pacman_packages_individually "${live_packages[@]}"
+  # Remove the live-only set in one transaction. Some entries depend on
+  # another entry in this same set (notably archinstall and
+  # arch-install-scripts), so removing them one-by-one can produce a visible
+  # dependency error even though the complete cleanup plan is valid.
+  _remove_pacman_packages "${live_packages[@]}"
 }
 
 _clean_files() {
