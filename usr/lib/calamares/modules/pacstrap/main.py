@@ -35,6 +35,7 @@ from package_progress import (  # noqa: E402
     RepositoryDatabaseSampler,
     TerminalFrameDecoder,
     TransferSampler,
+    format_active_download_label,
     format_repository_refresh_status,
     format_transfer_status,
     is_download_start,
@@ -107,7 +108,7 @@ def pretty_status_message():
     return None
 
 
-def line_cb(line: str):
+def line_cb(line: str, *, update_status: bool = True):
     """Record a complete pacstrap terminal frame without fabricating progress."""
     global custom_status_message
     global status_update_time
@@ -116,7 +117,8 @@ def line_cb(line: str):
     text = line.strip()
     if not text:
         return
-    custom_status_message = text
+    if update_status:
+        custom_status_message = text
     recent_output.append(text)
     recent_output = recent_output[-200:]
 
@@ -279,11 +281,18 @@ def _transfer_reporter(progress_start, progress_end, phase_state):
         global custom_status_message
         if phase_state["transaction_started"]:
             return
-        if not phase_state["download_started"]:
-            if snapshot.downloaded_bytes <= phase_state["download_baseline_bytes"]:
-                return
-            phase_state["download_started"] = True
-        custom_status_message = format_transfer_status(snapshot, _("Downloading packages"))
+        if snapshot.downloaded_bytes <= phase_state["download_baseline_bytes"]:
+            return
+        phase_state["download_started"] = True
+        if snapshot.active_packages:
+            phase_state["active_packages"] = snapshot.active_packages
+        label = format_active_download_label(
+            phase_state["active_packages"],
+            _("Downloading packages"),
+            _("Downloading %(packages)s"),
+            _("Downloading %(packages)s and %(count)d more packages"),
+        )
+        custom_status_message = format_transfer_status(snapshot, label)
         last_progress = max(last_progress, map_progress(progress_start, progress_end, snapshot.ratio))
         phase_state["progress"] = max(phase_state["progress"], last_progress)
         libcalamares.job.setprogress(phase_state["progress"])
@@ -549,6 +558,7 @@ def run():
     phase_state = {
         "download_started": False,
         "download_baseline_bytes": 0,
+        "active_packages": (),
         "transaction_started": False,
         "progress": 0.05,
     }
@@ -583,8 +593,9 @@ def run():
         libcalamares.utils.warning(f"pacstrap download telemetry unavailable: {error!s}")
 
     def install_output(frame):
-        line_cb(frame)
-        if is_download_start(frame):
+        download_frame = is_download_start(frame)
+        line_cb(frame, update_status=not download_frame)
+        if download_frame:
             phase_state["download_started"] = True
         transaction_ratio = transaction_tracker.observe(frame)
         if transaction_tracker.started:

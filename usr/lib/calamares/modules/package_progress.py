@@ -13,6 +13,7 @@ from urllib.parse import unquote, urlparse
 
 PACMAN_PRINT_FORMAT = "%n\t%v\t%s\t%l"
 _TRANSACTION_PROGRESS = re.compile(r"^\(\s*(\d+)\s*/\s*(\d+)\s*\)\s*(.*)$")
+_TRANSACTION_PACKAGE_TOTAL = re.compile(r"^packages?\s+\(\s*(\d+)\s*\)", re.IGNORECASE)
 _ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 
@@ -116,7 +117,18 @@ def parse_transaction_progress(frame: str) -> float | None:
 class PacmanTransactionTracker:
     """Track real pacman transaction stages without treating each counter as global."""
 
-    _STAGES = (
+    _BANNER_STAGES = (
+        (("running pre-transaction hooks",), 0.00, 0.03),
+        (("checking keys in keyring",), 0.03, 0.06),
+        (("checking package integrity",), 0.06, 0.11),
+        (("loading package files",), 0.11, 0.15),
+        (("checking for file conflicts",), 0.15, 0.18),
+        (("checking available disk space",), 0.18, 0.20),
+        (("processing package changes",), 0.20, 0.90),
+        (("running post-transaction hooks",), 0.90, 1.00),
+    )
+
+    _ITEM_STAGES = (
         (("running pre-transaction hooks",), 0.00, 0.03),
         (("checking keys in keyring",), 0.03, 0.06),
         (("checking package integrity",), 0.06, 0.11),
@@ -138,9 +150,19 @@ class PacmanTransactionTracker:
         (("running post-transaction hooks",), 0.90, 1.00),
     )
 
+    _PACKAGE_ACTIONS = (
+        "installing ",
+        "upgrading ",
+        "reinstalling ",
+        "downgrading ",
+        "removing ",
+    )
+
     def __init__(self) -> None:
         self._progress = 0.0
         self._active_stage: tuple[float, float] | None = None
+        self._package_total = 0
+        self._package_actions: set[str] = set()
 
     @property
     def progress(self) -> float:
@@ -154,17 +176,42 @@ class PacmanTransactionTracker:
     def reset(self) -> None:
         self._progress = 0.0
         self._active_stage = None
+        self._package_total = 0
+        self._package_actions.clear()
 
     def observe(self, frame: str) -> float | None:
         text = _ANSI_ESCAPE.sub("", str(frame)).lstrip()
         lowered = text.lower()
-        for patterns, start, end in self._STAGES:
+
+        total_match = _TRANSACTION_PACKAGE_TOTAL.match(text)
+        if total_match:
+            self._package_total = max(self._package_total, int(total_match.group(1)))
+            return None
+
+        banner_stage = None
+        for patterns, start, end in self._BANNER_STAGES:
             if any(pattern in lowered for pattern in patterns):
-                self._active_stage = (start, end)
+                banner_stage = (start, end)
+                self._active_stage = banner_stage
                 break
 
         match = _TRANSACTION_PROGRESS.match(text)
         if not match:
+            if lowered.startswith(self._PACKAGE_ACTIONS):
+                stage = (0.20, 0.90)
+                self._active_stage = stage
+                if lowered not in self._package_actions:
+                    self._package_actions.add(lowered)
+                if self._package_total > 0:
+                    ratio = min(1.0, len(self._package_actions) / self._package_total)
+                    candidate = map_progress(stage[0], stage[1], ratio)
+                else:
+                    candidate = stage[0]
+                self._progress = max(self._progress, candidate)
+                return self._progress
+            if banner_stage is not None:
+                self._progress = max(self._progress, banner_stage[0])
+                return self._progress
             return None
         current = int(match.group(1))
         total = int(match.group(2))
@@ -173,7 +220,7 @@ class PacmanTransactionTracker:
         description = match.group(3).strip().lower()
         ratio = min(1.0, max(0.0, current / total))
         stage = None
-        for patterns, start, end in self._STAGES:
+        for patterns, start, end in self._ITEM_STAGES:
             if any(pattern in description for pattern in patterns):
                 stage = (start, end)
                 self._active_stage = stage
@@ -204,15 +251,27 @@ def format_bytes(value: float) -> str:
     return f"{amount:.2f} {unit}"
 
 
+def format_active_download_label(
+    active_packages: Sequence[str],
+    default_label: str,
+    active_template: str,
+    remaining_template: str,
+) -> str:
+    """Put active package names in the primary download status text."""
+    packages = tuple(dict.fromkeys(str(item) for item in active_packages if str(item)))
+    if not packages:
+        return default_label
+    visible = ", ".join(packages[:2])
+    remaining = len(packages) - 2
+    if remaining > 0:
+        return remaining_template % {"packages": visible, "count": remaining}
+    return active_template % {"packages": visible}
+
+
 def format_transfer_status(snapshot: TransferSnapshot, label: str) -> str:
     text = f"{label}: {format_bytes(snapshot.downloaded_bytes)} / {format_bytes(snapshot.total_bytes)}"
     if snapshot.speed_bytes_per_second > 0:
         text += f" · {format_bytes(snapshot.speed_bytes_per_second)}/s"
-    if snapshot.active_packages:
-        visible = ", ".join(snapshot.active_packages[:2])
-        if len(snapshot.active_packages) > 2:
-            visible += f" +{len(snapshot.active_packages) - 2}"
-        text += f" · {visible}"
     return text
 
 
@@ -378,18 +437,39 @@ class TransferSampler:
         self._previous_time: float | None = None
         self._previous_bytes = 0
         self._speed = 0.0
+        self._observed_bytes: dict[str, int] = {}
 
-    def _file_bytes(self, download: PlannedDownload) -> tuple[int, bool]:
+    def _download_directories(self) -> tuple[Path, ...]:
+        directories: list[Path] = []
+        for cache in self._cache_directories:
+            directories.append(cache)
+            try:
+                entries = tuple(cache.iterdir())
+            except OSError:
+                continue
+            for entry in entries:
+                if not entry.name.startswith("download-"):
+                    continue
+                try:
+                    if entry.is_dir():
+                        directories.append(entry)
+                except OSError:
+                    continue
+        return tuple(directories)
+
+    def _file_bytes(
+        self, download: PlannedDownload, directories: Sequence[Path]
+    ) -> tuple[int, bool]:
         observed = 0
         active = False
-        for cache in self._cache_directories:
-            final_path = cache / download.filename
+        for directory in directories:
+            final_path = directory / download.filename
             try:
                 if final_path.is_file():
                     return download.size, False
             except OSError:
                 pass
-            partial_path = cache / f"{download.filename}.part"
+            partial_path = directory / f"{download.filename}.part"
             try:
                 if partial_path.is_file():
                     observed = max(observed, min(download.size, partial_path.stat().st_size))
@@ -402,8 +482,11 @@ class TransferSampler:
         timestamp = time.monotonic() if now is None else float(now)
         downloaded = 0
         active: list[str] = []
+        directories = self._download_directories()
         for item in self._plan.downloads:
-            item_bytes, is_active = self._file_bytes(item)
+            current_bytes, is_active = self._file_bytes(item, directories)
+            item_bytes = max(self._observed_bytes.get(item.filename, 0), current_bytes)
+            self._observed_bytes[item.filename] = item_bytes
             downloaded += item_bytes
             if is_active and item_bytes < item.size:
                 active.append(item.name)

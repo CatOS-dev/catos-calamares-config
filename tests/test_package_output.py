@@ -621,11 +621,19 @@ class PackageOutputTests(unittest.TestCase):
                     (module.custom_status_message or "").startswith("Downloading packages")
                 )
                 callback(":: Retrieving packages...")
-                (cache / "linux.pkg.tar.zst.part").write_bytes(b"x" * 512)
+                sandbox = cache / "download-abcdef"
+                sandbox.mkdir()
+                partial = sandbox / "linux.pkg.tar.zst.part"
+                partial.write_bytes(b"x" * 512)
                 heartbeat()
-                (cache / "linux.pkg.tar.zst.part").unlink()
+                detailed_status = module.custom_status_message
+                self.assertTrue((detailed_status or "").startswith("Downloading linux:"))
+                callback("linux-6.15-1-x86_64 downloading...")
+                self.assertEqual(module.custom_status_message, detailed_status)
                 (cache / "linux.pkg.tar.zst").write_bytes(b"x" * 1024)
                 heartbeat()
+                partial.unlink()
+                sandbox.rmdir()
                 callback(":: Processing package changes...")
                 heartbeat()
                 return 0
@@ -645,7 +653,7 @@ class PackageOutputTests(unittest.TestCase):
 
             manager.install(["linux"])
 
-        self.assertTrue(any((status or "").startswith("Downloading packages") for status in statuses))
+        self.assertTrue(any((status or "").startswith("Downloading linux:") for status in statuses))
         self.assertFalse((module.custom_status_message or "").startswith("Downloading packages"))
 
     def test_pacman_telemetry_failure_does_not_fail_package_install(self) -> None:
@@ -934,6 +942,87 @@ class PackageOutputTests(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual(heartbeats, [None])
         self.assertFalse(any((status or "").startswith("Downloading packages") for status in statuses))
+
+    def test_pacstrap_download_sandbox_reports_active_package_and_preserves_status(self) -> None:
+        fake = FakeCalamares()
+        registry_error = type("RegistryError", (Exception,), {})
+        fake.module.job.configuration = {
+            "basePackages": ["base"],
+            "requiredPackages": [],
+            "postInstallFiles": [],
+            "requiredPostInstallFiles": [],
+            "requiredPostInstallExecutables": [],
+            "sync_db": False,
+        }
+        module = load_module(
+            "catos_test_pacstrap_download_sandbox",
+            "usr/lib/calamares/modules/pacstrap/main.py",
+            fake,
+            {
+                "pkgcheck": module_stub(
+                    "pkgcheck",
+                    filter_operation_list=lambda _key, items, _packages, _groups: list(items),
+                ),
+                "pacstrap_repository": module_stub(
+                    "pacstrap_repository",
+                    CACHYOS_SELECTION="cachyos",
+                    install_repository_config=lambda *_args, **_kwargs: None,
+                    pacman_config_for=lambda *_args, **_kwargs: "/etc/pacman.conf",
+                    transform_packages=lambda packages, _selection: list(packages),
+                ),
+                "secureboot": module_stub("secureboot", secure_boot_enabled=lambda: False),
+                "registry": module_stub(
+                    "registry",
+                    RegistryError=registry_error,
+                    load_bootloader_registry=lambda: {},
+                    missing_required_packages=lambda *_args: [],
+                    package_plan=lambda *_args, **_kwargs: [],
+                ),
+            },
+        )
+        statuses: list[str | None] = []
+        fake.module.job.setprogress = lambda _progress: statuses.append(module.custom_status_message)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = root / "var/cache/pacman/pkg"
+            cache.mkdir(parents=True)
+            fake.storage.insert("rootMountPoint", temporary)
+            fake.storage.insert("packagechooser_repository", "catos")
+            fake.storage.insert("hasInternet", False)
+            module._build_repo_index_host = lambda _config: ({"base"}, set())
+            plan = module.parse_download_plan(
+                ["base\t1-1\t1024\thttps://repo.example/base.pkg.tar.zst"]
+            )
+            module._download_plan = lambda *_args: (plan, cache)
+
+            def run_in_host(_command, callback, heartbeat=None):
+                self.assertTrue(callable(heartbeat))
+                callback(f"==> Installing packages to {temporary}")
+                heartbeat()
+                callback(":: Retrieving packages...")
+                sandbox = cache / "download-abcdef"
+                sandbox.mkdir()
+                partial = sandbox / "base.pkg.tar.zst.part"
+                partial.write_bytes(b"x" * 512)
+                heartbeat()
+                detailed_status = module.custom_status_message
+                self.assertTrue((detailed_status or "").startswith("Downloading base:"))
+                callback("base-1-1-any downloading...")
+                self.assertEqual(module.custom_status_message, detailed_status)
+                (cache / "base.pkg.tar.zst").write_bytes(b"x" * 1024)
+                heartbeat()
+                partial.unlink()
+                sandbox.rmdir()
+                callback(":: Processing package changes...")
+                callback("( 1/1) installing base")
+
+            module.run_in_host = run_in_host
+            result = module.run()
+
+        self.assertIsNone(result)
+        self.assertTrue(any((status or "").startswith("Downloading base:") for status in statuses))
+        self.assertFalse((module.custom_status_message or "").startswith("Downloading base:"))
 
     def test_pacstrap_telemetry_fallback_keeps_progress_monotonic(self) -> None:
         fake = FakeCalamares()

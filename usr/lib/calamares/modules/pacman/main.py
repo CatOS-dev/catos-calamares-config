@@ -31,6 +31,7 @@ from package_progress import (
     RepositoryDatabaseSampler,
     TransferSampler,
     build_pacman_plan_command,
+    format_active_download_label,
     format_repository_refresh_status,
     format_transfer_status,
     is_download_start,
@@ -296,6 +297,7 @@ class PacmanManager:
         self.last_transfer_log_time = 0.0
         self.download_started = False
         self.download_baseline_bytes = 0
+        self.active_download_packages = ()
         self.transaction_started = False
         self.transaction_tracker = PacmanTransactionTracker()
         self.current_output = []
@@ -311,10 +313,11 @@ class PacmanManager:
             self.current_output.append(text)
             self.current_output[:] = self.current_output[-200:]
             recent_output[:] = self.current_output
-            custom_status_message = "pacman: " + text
-
-            if is_download_start(text):
+            download_frame = is_download_start(text)
+            if download_frame:
                 self.download_started = True
+            else:
+                custom_status_message = "pacman: " + text
 
             transaction_ratio = self.transaction_tracker.observe(text)
             if self.transaction_tracker.started:
@@ -344,6 +347,7 @@ class PacmanManager:
         self.progress_fraction = max(self.progress_fraction, self.operation_start)
         self.download_started = False
         self.download_baseline_bytes = 0
+        self.active_download_packages = ()
         self.transaction_started = False
         self.transaction_tracker.reset()
         self.download_end = map_progress(self.operation_start, self.operation_end, 0.72)
@@ -378,11 +382,18 @@ class PacmanManager:
         global custom_status_message
         if self.transaction_started:
             return
-        if not self.download_started:
-            if snapshot.downloaded_bytes <= self.download_baseline_bytes:
-                return
-            self.download_started = True
-        custom_status_message = format_transfer_status(snapshot, _("Downloading packages"))
+        if snapshot.downloaded_bytes <= self.download_baseline_bytes:
+            return
+        self.download_started = True
+        if snapshot.active_packages:
+            self.active_download_packages = snapshot.active_packages
+        label = format_active_download_label(
+            self.active_download_packages,
+            _("Downloading packages"),
+            _("Downloading %(packages)s"),
+            _("Downloading %(packages)s and %(count)d more packages"),
+        )
+        custom_status_message = format_transfer_status(snapshot, label)
         candidate = map_progress(
             self.operation_start,
             self.download_end,
@@ -418,6 +429,7 @@ class PacmanManager:
             pacman_count += 1
             self.download_started = False
             self.download_baseline_bytes = 0
+            self.active_download_packages = ()
             self.transaction_started = False
             self.transaction_tracker.reset()
             self.current_output = []

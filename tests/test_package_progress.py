@@ -35,14 +35,16 @@ class PackageProgressTests(unittest.TestCase):
         self.assertEqual(plan.downloads[0].name, "linux")
         self.assertEqual(plan.downloads[0].filename, "linux-6.15-1-x86_64.pkg.tar.zst")
 
-    def test_samples_partial_files_and_real_transfer_speed(self) -> None:
+    def test_samples_pacman_download_sandbox_and_real_transfer_speed(self) -> None:
         module = load_progress_module()
         plan = module.parse_download_plan(
             ["linux\t6.15-1\t1024\thttps://repo.example/linux.pkg.tar.zst"]
         )
         with tempfile.TemporaryDirectory() as temporary:
             cache = Path(temporary)
-            partial = cache / "linux.pkg.tar.zst.part"
+            sandbox = cache / "download-abcdef"
+            sandbox.mkdir()
+            partial = sandbox / "linux.pkg.tar.zst.part"
             partial.write_bytes(b"x" * 256)
             sampler = module.TransferSampler(plan, [cache])
 
@@ -58,12 +60,57 @@ class PackageProgressTests(unittest.TestCase):
             self.assertEqual(second.speed_bytes_per_second, 256.0)
             self.assertAlmostEqual(second.ratio, 0.75)
 
+    def test_deduplicates_download_sandbox_to_cache_migration(self) -> None:
+        module = load_progress_module()
+        plan = module.parse_download_plan(
+            ["linux\t6.15-1\t1024\thttps://repo.example/linux.pkg.tar.zst"]
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            cache = Path(temporary)
+            sandbox = cache / "download-abcdef"
+            sandbox.mkdir()
+            partial = sandbox / "linux.pkg.tar.zst.part"
+            partial.write_bytes(b"x" * 768)
+            sampler = module.TransferSampler(plan, [cache])
+
+            before_move = sampler.sample(now=10.0)
+            self.assertEqual(before_move.downloaded_bytes, 768)
+
+            final_path = cache / "linux.pkg.tar.zst"
+            final_path.write_bytes(b"x" * 1024)
+            overlap = sampler.sample(now=11.0)
+            self.assertEqual(overlap.downloaded_bytes, 1024)
+            self.assertAlmostEqual(overlap.ratio, 1.0)
+            self.assertGreaterEqual(overlap.speed_bytes_per_second, 0.0)
+
             partial.unlink()
-            (cache / "linux.pkg.tar.zst").write_bytes(b"x" * 1024)
-            final = sampler.sample(now=13.0)
-            self.assertEqual(final.downloaded_bytes, 1024)
-            self.assertAlmostEqual(final.ratio, 1.0)
-            self.assertEqual(final.active_packages, ())
+            sandbox.rmdir()
+            after_move = sampler.sample(now=12.0)
+            self.assertEqual(after_move.downloaded_bytes, 1024)
+            self.assertAlmostEqual(after_move.ratio, 1.0)
+            self.assertGreaterEqual(after_move.speed_bytes_per_second, 0.0)
+
+    def test_formats_active_package_names_as_primary_download_status(self) -> None:
+        module = load_progress_module()
+        label = module.format_active_download_label(
+            ("firefox", "qt5-base", "vlc"),
+            "Downloading packages",
+            "Downloading %(packages)s",
+            "Downloading %(packages)s and %(count)d more packages",
+        )
+        snapshot = module.TransferSnapshot(
+            downloaded_bytes=1024,
+            total_bytes=4096,
+            speed_bytes_per_second=512.0,
+            ratio=0.25,
+            active_packages=("firefox", "qt5-base", "vlc"),
+        )
+
+        status = module.format_transfer_status(snapshot, label)
+
+        self.assertEqual(label, "Downloading firefox, qt5-base and 1 more packages")
+        self.assertTrue(status.startswith("Downloading firefox, qt5-base and 1 more packages:"))
+        self.assertEqual(status.count("firefox"), 1)
 
     def test_samples_repository_database_refresh_bytes_and_completion(self) -> None:
         module = load_progress_module()
@@ -143,8 +190,39 @@ class PackageProgressTests(unittest.TestCase):
         tracker = module.PacmanTransactionTracker()
 
         self.assertFalse(tracker.started)
-        self.assertIsNone(tracker.observe(":: Checking keys in keyring..."))
+        stage_start = tracker.observe(":: Checking keys in keyring...")
+        self.assertAlmostEqual(stage_start, 0.03)
         self.assertTrue(tracker.started)
+
+    def test_pacstrap_install_root_banner_does_not_start_package_transaction(self) -> None:
+        module = load_progress_module()
+        tracker = module.PacmanTransactionTracker()
+
+        self.assertIsNone(tracker.observe("==> Installing packages to /tmp/calamares-root"))
+        self.assertFalse(tracker.started)
+        self.assertAlmostEqual(tracker.observe(":: Processing package changes..."), 0.20)
+        self.assertTrue(tracker.started)
+
+    def test_transaction_tracker_counts_non_tty_package_actions(self) -> None:
+        module = load_progress_module()
+        tracker = module.PacmanTransactionTracker()
+
+        self.assertIsNone(tracker.observe("Package (4)  New Version  Net Change"))
+        self.assertFalse(tracker.started)
+        transaction_start = tracker.observe(":: Processing package changes...")
+        first = tracker.observe("installing filesystem...")
+        duplicate = tracker.observe("installing filesystem...")
+        self.assertIsNone(tracker.observe("Optional dependencies for filesystem"))
+        second = tracker.observe("installing bash...")
+        third = tracker.observe("installing systemd...")
+        fourth = tracker.observe("installing linux...")
+
+        self.assertAlmostEqual(transaction_start, 0.20)
+        self.assertGreater(first, transaction_start)
+        self.assertEqual(duplicate, first)
+        self.assertGreater(second, first)
+        self.assertGreater(third, second)
+        self.assertAlmostEqual(fourth, 0.90)
 
     def test_transaction_tracker_does_not_finish_on_short_check_stage(self) -> None:
         module = load_progress_module()
@@ -153,13 +231,14 @@ class PackageProgressTests(unittest.TestCase):
         key_complete = tracker.observe("( 2/2) checking keys in keyring")
         install_start = tracker.observe("( 1/120) installing linux")
         install_middle = tracker.observe("( 60/120) installing systemd")
-        self.assertIsNone(tracker.observe(":: Running post-transaction hooks..."))
+        post_start = tracker.observe(":: Running post-transaction hooks...")
         hook_complete = tracker.observe("( 4/4) Updating icon theme caches...")
 
         self.assertIsNotNone(key_complete)
         self.assertLess(key_complete, 0.20)
         self.assertGreaterEqual(install_start, key_complete)
         self.assertGreater(install_middle, install_start)
+        self.assertAlmostEqual(post_start, 0.90)
         self.assertEqual(hook_complete, 1.0)
 
     def test_maps_download_ratio_into_real_job_phase(self) -> None:
