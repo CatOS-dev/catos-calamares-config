@@ -351,7 +351,6 @@
             - tela-circle-icon-theme-all
             - catos-bibata-cursor
             - nwg-look
-            - qt6ct
     - name: Niri-noctalia
       description: Niri scrolling Wayland compositor with Noctalia Shell
       hidden: false
