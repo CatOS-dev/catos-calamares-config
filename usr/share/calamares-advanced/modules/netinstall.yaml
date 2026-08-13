@@ -476,6 +476,67 @@
             - catos-bibata-cursor
             - nwg-look
             - qt6ct
+    - name: Hyprland-noctalia
+      description: Hyprland dynamic tiling Wayland compositor with Noctalia Shell
+      hidden: false
+      selected: false
+      expanded: false
+      subgroups:
+        - name: Hyprland Noctalia core
+          description: Hyprland session, Noctalia Shell, XWayland and Catdot profile
+          critical: true
+          packages:
+            - hyprland
+            - noctalia
+            - xorg-xwayland
+            - catos-hyprland-noctaliav5
+        - name: Recommended display manager
+          description: Noctalia Greeter and its greetd service
+          critical: false
+          packages:
+            - greetd
+            - noctalia-greeter
+        - name: Desktop services
+          description: Network, Bluetooth, audio and session utilities
+          critical: false
+          packages:
+            - network-manager-applet
+            - blueman
+            - pipewire-pulse
+            - wireplumber
+            - pavucontrol
+            - brightnessctl
+            - playerctl
+        - name: File integration
+          description: File manager, removable media and network shares
+          critical: false
+          packages:
+            - nautilus
+            - gvfs
+            - gvfs-afc
+            - gvfs-gphoto2
+            - gvfs-mtp
+            - gvfs-nfs
+            - gvfs-smb
+        - name: Wayland tools
+          description: Screenshots, recording and clipboard utilities
+          critical: false
+          packages:
+            - grim
+            - slurp
+            - swappy
+            - wl-clipboard
+            - wf-recorder
+        - name: CatOS customization
+          description: CatOS themes, icons, cursor and appearance tools
+          critical: false
+          packages:
+            - catos-gtk-settings
+            - catos-graphite-gtk-theme
+            - papirus-icon-theme
+            - catos-bibata-cursor
+            - nwg-look
+            - qt6ct-kde
     - name: Deepin-Desktop
       description: Deepin Desktop Environment
       hidden: false
