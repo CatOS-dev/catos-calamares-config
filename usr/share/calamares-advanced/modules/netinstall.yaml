@@ -42,6 +42,8 @@
           - yay
           - paru
           - rebuild-detector
+          - shelly
+          - shelly-flatpak-backend
       - name: "desktop integration"
         description: "Useful helper tools and libs for desktop usage"
         selected: true
@@ -260,7 +262,6 @@
             - gnome-clocks
             - gnome-font-viewer
             - gnome-logs
-            - gnome-software
             - gnome-text-editor
             - gnome-weather
             - ptyxis
