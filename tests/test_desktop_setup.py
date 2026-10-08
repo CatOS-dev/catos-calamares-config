@@ -73,6 +73,18 @@ class DesktopSetupBehaviorTests(unittest.TestCase):
                 "profile <alice> <catos-niri-noctaliav5>\n",
             )
 
+    def test_hyprland_noctalia_configures_greeter_and_catdot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            wrapper = self.prepare_scripts(Path(tmpdir))
+            result, calls = self.run_wrapper(wrapper, "Hyprland-noctalia", "alice", "alice")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                calls,
+                "dm <--autologin-user> <alice> <--autologin-session> <hyprland>"
+                " <noctalia-greeter> <ly> <gdm> <sddm> <lightdm> <plasmalogin>\n"
+                "profile <alice> <catos-hyprland-noctaliav5>\n",
+            )
+
     def test_desktop_without_catdot_profile_only_configures_display_manager(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             wrapper = self.prepare_scripts(Path(tmpdir))

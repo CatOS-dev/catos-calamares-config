@@ -55,6 +55,11 @@ case $desktop in
         profile=catos-hyprland-dms
         set -- ly gdm sddm lightdm plasmalogin
         ;;
+    Hyprland-noctalia)
+        session=hyprland
+        profile=catos-hyprland-noctaliav5
+        set -- noctalia-greeter ly gdm sddm lightdm plasmalogin
+        ;;
     Deepin-Desktop)
         set -- ddm lightdm sddm gdm
         ;;

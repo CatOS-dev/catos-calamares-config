@@ -315,9 +315,6 @@
           packages:
             - network-manager-applet
             - blueman
-            - pipewire-pulse
-            - wireplumber
-            - pavucontrol
             - brightnessctl
             - playerctl
         - name: File integration
@@ -350,8 +347,6 @@
             - catos-gtk-settings
             - catos-graphite-gtk-theme
             - tela-circle-icon-theme-all
-            - catos-bibata-cursor
-            - nwg-look
     - name: Niri-noctalia
       description: Niri scrolling Wayland compositor with Noctalia Shell
       hidden: false
@@ -378,9 +373,6 @@
           packages:
             - network-manager-applet
             - blueman
-            - pipewire-pulse
-            - wireplumber
-            - pavucontrol
             - brightnessctl
             - playerctl
         - name: File integration
@@ -413,8 +405,6 @@
             - catos-gtk-settings
             - catos-graphite-gtk-theme
             - tela-circle-icon-theme-all
-            - catos-bibata-cursor
-            - nwg-look
             - qt5ct
             - qt6ct
     - name: Hyprland-dms
@@ -439,9 +429,6 @@
           packages:
             - network-manager-applet
             - blueman
-            - pipewire-pulse
-            - wireplumber
-            - pavucontrol
             - brightnessctl
             - playerctl
         - name: File integration
@@ -474,8 +461,6 @@
             - catos-gtk-settings
             - catos-graphite-gtk-theme
             - tela-circle-icon-theme-all
-            - catos-bibata-cursor
-            - nwg-look
             - qt6ct
     - name: Hyprland-noctalia
       description: Hyprland dynamic tiling Wayland compositor with Noctalia Shell
@@ -503,9 +488,6 @@
           packages:
             - network-manager-applet
             - blueman
-            - pipewire-pulse
-            - wireplumber
-            - pavucontrol
             - brightnessctl
             - playerctl
         - name: File integration
@@ -535,8 +517,6 @@
             - catos-gtk-settings
             - catos-graphite-gtk-theme
             - papirus-icon-theme
-            - catos-bibata-cursor
-            - nwg-look
             - qt6ct-kde
     - name: Deepin-Desktop
       description: Deepin Desktop Environment
@@ -870,7 +850,6 @@
             - sddm
             - network-manager-applet
             - gvfs
-            - xdg-utils
             - xdg-desktop-portal-lxqt
             - breeze
             - breeze-gtk
@@ -960,9 +939,6 @@
           packages:
             - network-manager-applet
             - blueman
-            - pipewire-pulse
-            - wireplumber
-            - pavucontrol
             - brightnessctl
             - playerctl
         - name: File integration
@@ -995,8 +971,6 @@
             - catos-gtk-settings
             - catos-graphite-gtk-theme
             - tela-circle-icon-theme-all
-            - catos-bibata-cursor
-            - nwg-look
     - name: Labwc
       description: CatOS Labwc session
       hidden: false
@@ -1017,9 +991,6 @@
           packages:
             - network-manager-applet
             - blueman
-            - pipewire-pulse
-            - wireplumber
-            - pavucontrol
             - brightnessctl
             - playerctl
         - name: File integration
@@ -1052,8 +1023,6 @@
             - catos-gtk-settings
             - catos-graphite-gtk-theme
             - tela-circle-icon-theme-all
-            - catos-bibata-cursor
-            - nwg-look
     - name: Wayfire
       description: CatOS Wayfire session
       hidden: false
@@ -1076,9 +1045,6 @@
           packages:
             - network-manager-applet
             - blueman
-            - pipewire-pulse
-            - wireplumber
-            - pavucontrol
             - brightnessctl
             - playerctl
         - name: File integration
@@ -1111,8 +1077,6 @@
             - catos-gtk-settings
             - catos-graphite-gtk-theme
             - tela-circle-icon-theme-all
-            - catos-bibata-cursor
-            - nwg-look
     - name: UKUI
       description: UKUI desktop
       hidden: true
@@ -1125,7 +1089,6 @@
           packages:
             - ukui
             - sddm
-            - accountsservice
             - gvfs
             - qt5-quickcontrols
             - xdg-desktop-portal-gtk
