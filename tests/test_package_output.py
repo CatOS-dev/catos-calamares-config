@@ -1197,6 +1197,57 @@ class PackageOutputTests(unittest.TestCase):
         chwd._ = lambda text: f"translated:{text}"
         self.assertEqual(chwd.pretty_name(), "translated:Installing needed drivers for CatOS...")
 
+    def test_pacman_refresh_without_welcome_internet_probe(self) -> None:
+        fake = FakeCalamares()
+        fake.module.job.configuration = {"backend": "pacman", "update_db": True, "operations": []}
+        module = load_module(
+            "catos_test_pacman_no_network_probe",
+            "usr/lib/calamares/modules/pacman/main.py",
+            fake,
+            {
+                "pkgcheck": module_stub(
+                    "pkgcheck",
+                    build_repo_index=lambda: (set(), set()),
+                    preprocess_operations=lambda **_kwargs: ([], 0),
+                ),
+            },
+        )
+        calls = []
+        module._refresh_target_keyring = lambda: calls.append("keyring")
+        module.PacmanManager = lambda: types.SimpleNamespace(
+            update_db=lambda: calls.append("refresh"),
+            update_system=lambda: calls.append("upgrade"),
+        )
+
+        self.assertFalse(fake.storage.contains("hasInternet"))
+        self.assertIsNone(module.run())
+        self.assertEqual(calls, ["keyring", "refresh"])
+
+    def test_paru_refresh_without_welcome_internet_probe(self) -> None:
+        fake = FakeCalamares()
+        fake.module.job.configuration = {
+            "backend": "paru",
+            "update_db": True,
+            "update_system": True,
+            "operations": [],
+        }
+        module = load_module(
+            "catos_test_paru_no_network_probe",
+            "usr/lib/calamares/modules/paru/main.py",
+            fake,
+            {"process": module_stub("process", ProcessTimeout=RuntimeError, run_process_group=lambda *_args: None)},
+        )
+        calls = []
+        module.ParuManager = lambda: types.SimpleNamespace(
+            update_db=lambda: calls.append("refresh"),
+            update_system=lambda: calls.append("upgrade"),
+            cleanup=lambda: calls.append("cleanup") or True,
+        )
+
+        self.assertFalse(fake.storage.contains("hasInternet"))
+        self.assertIsNone(module.run())
+        self.assertEqual(calls, ["refresh", "upgrade", "cleanup"])
+
     def test_pacstrap_repository_refresh_streams_terminal_frames(self) -> None:
         fake = FakeCalamares()
         registry_error = type("RegistryError", (Exception,), {})
@@ -1223,7 +1274,7 @@ class PackageOutputTests(unittest.TestCase):
                 ),
             },
         )
-        fake.storage.insert("hasInternet", True)
+        self.assertFalse(fake.storage.contains("hasInternet"))
         progresses: list[float] = []
         fake.module.job.setprogress = progresses.append
         fake.module.job.configuration = {"sync_db": True}
@@ -1283,7 +1334,7 @@ class PackageOutputTests(unittest.TestCase):
             pacman_config = root / "pacman.conf"
             pacman_config.write_text("[options]\n", encoding="utf-8")
             fake.storage.insert("rootMountPoint", str(root))
-            fake.storage.insert("hasInternet", True)
+            self.assertFalse(fake.storage.contains("hasInternet"))
             fake.storage.insert("packagechooser_repository", "catos")
             fake.storage.insert("firmwareType", "bios")
             fake.module.job.configuration = {

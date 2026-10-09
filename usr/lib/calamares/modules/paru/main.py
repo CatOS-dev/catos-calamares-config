@@ -326,20 +326,12 @@ def run():
     if backend != "paru":
         return "Bad backend", f'backend="{backend}" (paru-only module)'
 
-    if libcalamares.job.configuration.get("skip_if_no_internet", False) and not libcalamares.globalstorage.value(
-        "hasInternet"
-    ):
-        libcalamares.utils.warning("Paru package installation skipped: no internet")
-        return None
-
     pkgman = ParuManager()
     cleanup_ok = False
     try:
-        if libcalamares.job.configuration.get("update_db", False) and libcalamares.globalstorage.value("hasInternet"):
+        if libcalamares.job.configuration.get("update_db", False):
             pkgman.update_db()
-        if libcalamares.job.configuration.get("update_system", False) and libcalamares.globalstorage.value(
-            "hasInternet"
-        ):
+        if libcalamares.job.configuration.get("update_system", False):
             pkgman.update_system()
 
         operations = list(libcalamares.job.configuration.get("operations", []))

@@ -688,14 +688,8 @@ def run():
     if backend != "pacman":
         return "Bad backend", f'backend="{backend}" (pacman-only module)'
 
-    skip_this = libcalamares.job.configuration.get("skip_if_no_internet", False)
-    if skip_this and not libcalamares.globalstorage.value("hasInternet"):
-        libcalamares.utils.warning("Package installation has been skipped: no internet")
-        return None
-
     pkgman = PacmanManager()
 
-    has_internet = bool(libcalamares.globalstorage.value("hasInternet"))
     update_db = libcalamares.job.configuration.get("update_db", False)
     update_system = libcalamares.job.configuration.get("update_system", False)
 
@@ -709,7 +703,7 @@ def run():
         and "flatpak" not in str(entry.get("source", "")).lower()
     ]
 
-    needs_keyring = (has_internet and (update_db or update_system)) or _operations_require_keyring(operations)
+    needs_keyring = update_db or update_system or _operations_require_keyring(operations)
     if needs_keyring:
         try:
             _refresh_target_keyring()
@@ -721,7 +715,7 @@ def run():
                 e,
             )
 
-    if update_db and has_internet:
+    if update_db:
         try:
             pkgman.update_db()
         except subprocess.CalledProcessError as e:
@@ -734,7 +728,7 @@ def run():
                 e,
             )
 
-    if update_system and has_internet:
+    if update_system:
         try:
             pkgman.update_system()
         except subprocess.CalledProcessError as e:

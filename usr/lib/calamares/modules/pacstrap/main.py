@@ -304,13 +304,6 @@ def _transfer_reporter(progress_start, progress_end, phase_state):
     return report
 
 
-def _has_internet():
-    # Calamares commonly uses hasInternet; your module also sets "online" at the end.
-    return bool(libcalamares.globalstorage.value("hasInternet")) or bool(
-        libcalamares.globalstorage.value("online")
-    )
-
-
 def _repository_refresh_sampler(pacman_config):
     repositories = _host_capture_lines(["pacman-conf", "-c", pacman_config, "--repo-list"])
     configured_dbpath = _host_capture_lines(["pacman-conf", "-c", pacman_config, "DBPath"])
@@ -326,10 +319,6 @@ def _maybe_sync_db_host(pacman_config):
     sync = libcalamares.job.configuration.get("sync_db", True)
     if not sync:
         libcalamares.utils.debug("sync_db disabled; skipping pacman -Sy.")
-        return
-
-    if not _has_internet():
-        libcalamares.utils.warning("No internet detected; skipping pacman -Sy before pkgcheck.")
         return
 
     global custom_status_message
@@ -541,8 +530,6 @@ def run():
 
     if not base_packages:
         libcalamares.utils.warning("All basePackages were filtered out (missing). Skipping pacstrap.")
-        # Keep behavior: mark "online" and finish.
-        libcalamares.globalstorage.insert("online", True)
         libcalamares.job.setprogress(1.0)
         return None
 
@@ -712,6 +699,5 @@ def run():
                 _("Copied installer helper is not executable: {path}").format(path=dest),
             )
 
-    libcalamares.globalstorage.insert("online", True)
     libcalamares.job.setprogress(1.0)
     return None
