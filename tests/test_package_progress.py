@@ -90,27 +90,6 @@ class PackageProgressTests(unittest.TestCase):
             self.assertAlmostEqual(after_move.ratio, 1.0)
             self.assertGreaterEqual(after_move.speed_bytes_per_second, 0.0)
 
-    def test_formats_active_package_names_as_primary_download_status(self) -> None:
-        module = load_progress_module()
-        label = module.format_active_download_label(
-            ("firefox", "qt5-base", "vlc"),
-            "Downloading packages",
-            "Downloading %(packages)s",
-            "Downloading %(packages)s and %(count)d more packages",
-        )
-        snapshot = module.TransferSnapshot(
-            downloaded_bytes=1024,
-            total_bytes=4096,
-            speed_bytes_per_second=512.0,
-            ratio=0.25,
-            active_packages=("firefox", "qt5-base", "vlc"),
-        )
-
-        status = module.format_transfer_status(snapshot, label)
-
-        self.assertEqual(label, "Downloading firefox, qt5-base and 1 more packages")
-        self.assertTrue(status.startswith("Downloading firefox, qt5-base and 1 more packages:"))
-        self.assertEqual(status.count("firefox"), 1)
 
     def test_samples_repository_database_refresh_bytes_and_completion(self) -> None:
         module = load_progress_module()

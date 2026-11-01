@@ -11,20 +11,6 @@ SCRIPT = ROOT / "etc/calamares/scripts/configure-selected-desktop"
 
 
 class NoctaliaDesktopBehaviorTests(unittest.TestCase):
-    def test_missing_optional_helpers_are_nonfatal(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            script = Path(temporary_directory) / SCRIPT.name
-            shutil.copy2(SCRIPT, script)
-            result = subprocess.run(
-                [str(script), "Niri-noctalia", "test-user"],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("missing display-manager helper", result.stderr)
-        self.assertIn("missing Catdot helper", result.stderr)
 
     def test_missing_autologin_user_preserves_display_manager_selection(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

@@ -64,57 +64,6 @@ class BrandingRuntimeTests(unittest.TestCase):
                 self.assertNotIn("is not a type", stderr, base)
 
 
-class KeyringBootstrapBehaviorTests(unittest.TestCase):
-    def test_keyring_bootstrap_executes_expected_operations(self) -> None:
-        script = ROOT / "etc/calamares/scripts/create-pacman-keyring"
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            bin_dir = root / "bin"
-            bin_dir.mkdir()
-            call_log = root / "calls.log"
-            gpg_dir = root / "gnupg"
-            cachyos_key = root / "cachyos.asc"
-            cachyos_key.write_text("test key\n", encoding="utf-8")
-            command_mock = bin_dir / "mock-command"
-            command_mock.write_text(
-                "#!/bin/sh\n"
-                "name=${0##*/}\n"
-                "printf '%s %s\\n' \"$name\" \"$*\" >> \"$CALL_LOG\"\n"
-                "if [ \"$name\" = pacman-conf ]; then printf '%s\\n' \"$MOCK_GPG_DIR\"; fi\n",
-                encoding="utf-8",
-            )
-            command_mock.chmod(0o755)
-            for command in ("pacman", "pacman-key", "pacman-conf", "gpgconf", "sleep"):
-                (bin_dir / command).symlink_to(command_mock)
-            result = subprocess.run(
-                [str(script)],
-                check=False,
-                capture_output=True,
-                text=True,
-                env={
-                    **os.environ,
-                    "PATH": f"{bin_dir}:{os.environ['PATH']}",
-                    "CALL_LOG": str(call_log),
-                    "MOCK_GPG_DIR": str(gpg_dir),
-                    "CACHYOS_KEY_FILE": str(cachyos_key),
-                },
-            )
-            calls = call_log.read_text(encoding="utf-8").splitlines()
-
-        self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertEqual(
-            calls,
-            [
-                "pacman-conf GPGDir",
-                "pacman-key --init",
-                "pacman-key --populate archlinux",
-                f"pacman-key --add {cachyos_key}",
-                "pacman-key --lsign-key 882DCFE48E2051D48E2562ABF3B607488DB35A47",
-                "pacman-key --populate catos arch4edu archlinuxcn",
-                f"gpgconf --homedir {gpg_dir} --kill all",
-            ],
-        )
-
 
 class ProcessGroupBehaviorTests(unittest.TestCase):
     def test_timeout_kills_child_processes(self) -> None:

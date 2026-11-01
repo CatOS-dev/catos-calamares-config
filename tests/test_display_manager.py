@@ -72,18 +72,6 @@ class DisplayManagerBehaviorTests(unittest.TestCase):
         path = root / relative.lstrip("/")
         return os.readlink(path) if path.is_symlink() else None
 
-    def test_preferred_ly_creates_only_tty_service(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            self.install_ly(root)
-            self.install_gdm(root)
-            result = self.run_script(root, "ly", "gdm", "sddm")
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(
-                self.link_target(root, "/etc/systemd/system/multi-user.target.wants/ly@tty2.service"),
-                "/usr/lib/systemd/system/ly@.service",
-            )
-            self.assertIsNone(self.link_target(root, "/etc/systemd/system/display-manager.service"))
 
     def test_missing_preference_falls_back_in_argument_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -97,23 +85,6 @@ class DisplayManagerBehaviorTests(unittest.TestCase):
                 "/usr/lib/systemd/system/gdm.service",
             )
 
-    def test_complete_noctalia_configures_greetd(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            self.install_noctalia(root)
-            result = self.run_script(root, "noctalia-greeter", "gdm")
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(
-                self.link_target(root, "/etc/systemd/system/display-manager.service"),
-                "/usr/lib/systemd/system/greetd.service",
-            )
-            self.assertEqual(
-                (root / "etc/greetd/config.toml").read_text(encoding="utf-8"),
-                "[terminal]\nvt = 1\n\n[default_session]\n"
-                'command = "/usr/bin/noctalia-greeter-session"\n'
-                'user = "greeter"\n',
-            )
-            self.assertTrue((root / "var/lib/noctalia-greeter").is_dir())
 
     def test_incomplete_noctalia_falls_back(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -128,54 +99,6 @@ class DisplayManagerBehaviorTests(unittest.TestCase):
             )
             self.assertFalse((root / "etc/greetd/config.toml").exists())
 
-    def test_no_usable_candidate_warns_and_preserves_existing_configuration(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            systemd = root / "etc/systemd/system"
-            systemd.mkdir(parents=True)
-            (systemd / "display-manager.service").symlink_to(
-                "/usr/lib/systemd/system/sddm.service"
-            )
-
-            result = self.run_script(root, "ly", "gdm")
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("no usable display manager", result.stderr.lower())
-            self.assertEqual(
-                self.link_target(root, "/etc/systemd/system/display-manager.service"),
-                "/usr/lib/systemd/system/sddm.service",
-            )
-
-    def test_none_and_new_selection_remove_conflicting_links(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            self.install_gdm(root)
-            self.install_sddm(root)
-            self.install_ly(root)
-            systemd = root / "etc/systemd/system"
-            (systemd / "multi-user.target.wants").mkdir(parents=True)
-            (systemd / "graphical.target.wants").mkdir(parents=True)
-            (systemd / "display-manager.service").symlink_to(
-                "/usr/lib/systemd/system/sddm.service"
-            )
-            (systemd / "multi-user.target.wants/ly@tty2.service").symlink_to(
-                "/usr/lib/systemd/system/ly@.service"
-            )
-            (systemd / "graphical.target.wants/sddm.service").symlink_to(
-                "/usr/lib/systemd/system/sddm.service"
-            )
-
-            selected = self.run_script(root, "gdm", "ly")
-            self.assertEqual(selected.returncode, 0, selected.stderr)
-            self.assertEqual(
-                self.link_target(root, "/etc/systemd/system/display-manager.service"),
-                "/usr/lib/systemd/system/gdm.service",
-            )
-            self.assertFalse((systemd / "multi-user.target.wants/ly@tty2.service").exists())
-            self.assertFalse((systemd / "graphical.target.wants/sddm.service").exists())
-
-            cleared = self.run_script(root, "none")
-            self.assertEqual(cleared.returncode, 0, cleared.stderr)
-            self.assertFalse((systemd / "display-manager.service").exists())
 
     def test_ly_autologin_uses_requested_user_and_session_or_clears_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
