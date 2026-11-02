@@ -37,6 +37,18 @@ case $desktop in
     KDE-Desktop)
         set -- plasmalogin sddm gdm lightdm
         ;;
+    GXDE)
+        session=gxde-flakewm
+        set -- sddm
+        ;;
+    Denial)
+        session=denial
+        set -- sddm
+        ;;
+    Pantheon)
+        session=pantheon
+        set -- lightdm
+        ;;
     GNOME-Desktop)
         set -- gdm lightdm sddm plasmalogin
         ;;

@@ -152,6 +152,48 @@
   selected: false
   expanded: true
   subgroups:
+    - name: GXDE
+      description: GXDE desktop
+      hidden: true
+      selected: false
+      critical: true
+      packages:
+        - gxde-core-git
+        - sddm
+        - accountsservice
+        - xdg-desktop-portal-gxde-git
+
+    - name: Denial
+      description: Denial desktop
+      hidden: true
+      selected: false
+      critical: true
+      packages:
+        - denial
+        - sddm
+
+    - name: Pantheon
+      description: Pantheon desktop
+      hidden: false
+      selected: false
+      subgroups:
+        - name: Pantheon core
+          description: Desktop session and login manager
+          critical: true
+          packages:
+            - pantheon-session
+            - lightdm
+            - lightdm-pantheon-greeter
+            - xorg-server
+        - name: Pantheon applications
+          description: Desktop settings and applications
+          critical: false
+          packages:
+            - switchboard
+            - pantheon-files
+            - pantheon-terminal
+            - pantheon-calculator
+
     - name: KDE-Desktop
       description: KDE Plasma desktop
       hidden: false
