@@ -39,7 +39,7 @@ case $desktop in
         ;;
     GXDE)
         session=gxde-flakewm
-        set -- sddm
+        set -- gxdm
         ;;
     Denial)
         session=denial

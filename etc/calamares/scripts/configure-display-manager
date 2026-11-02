@@ -114,7 +114,7 @@ cleanup_conflicts() {
     rm -f "$systemd/multi-user.target.wants"/ly@*.service
     for wants in graphical.target.wants multi-user.target.wants; do
         for service in \
-            greetd.service gdm.service sddm.service lightdm.service \
+            greetd.service gdm.service sddm.service gxdm.service lightdm.service \
             plasmalogin.service cosmic-greeter.service lxdm.service ddm.service; do
             rm -f "$systemd/$wants/$service"
         done
@@ -130,6 +130,9 @@ traditional_available() {
             ;;
         sddm)
             is_executable /usr/bin/sddm && is_file /usr/lib/systemd/system/sddm.service
+            ;;
+        gxdm)
+            is_executable /usr/bin/gxdm && is_file /usr/lib/systemd/system/gxdm.service
             ;;
         lightdm)
             is_executable /usr/bin/lightdm && is_file /usr/lib/systemd/system/lightdm.service
@@ -159,6 +162,7 @@ service_for() {
     case $1 in
         gdm) printf '%s\n' gdm.service ;;
         sddm) printf '%s\n' sddm.service ;;
+        gxdm) printf '%s\n' gxdm.service ;;
         lightdm) printf '%s\n' lightdm.service ;;
         plasmalogin) printf '%s\n' plasmalogin.service ;;
         cosmic-greeter) printf '%s\n' cosmic-greeter.service ;;
@@ -190,7 +194,7 @@ candidate_available() {
     case $1 in
         noctalia-greeter) noctalia_available ;;
         ly) ly_available ;;
-        gdm|sddm|lightdm|plasmalogin|cosmic-greeter|lxdm|ddm)
+        gdm|sddm|gxdm|lightdm|plasmalogin|cosmic-greeter|lxdm|ddm)
             traditional_available "$1"
             ;;
         *) return 1 ;;

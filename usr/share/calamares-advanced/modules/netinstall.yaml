@@ -159,9 +159,8 @@
       critical: true
       packages:
         - gxde-core-git
-        - sddm
+        - gxdm-git
         - accountsservice
-        - xdg-desktop-portal-gxde-git
 
     - name: Denial
       description: Denial desktop
