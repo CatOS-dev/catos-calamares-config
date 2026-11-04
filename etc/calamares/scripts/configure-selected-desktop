@@ -46,7 +46,7 @@ case $desktop in
         set -- sddm
         ;;
     Pantheon)
-        session=pantheon
+        session=pantheon-wayland
         set -- lightdm
         ;;
     GNOME-Desktop)

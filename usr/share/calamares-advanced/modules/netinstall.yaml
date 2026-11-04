@@ -177,12 +177,21 @@
       selected: false
       subgroups:
         - name: Pantheon core
-          description: Desktop session and login manager
+          description: Wayland desktop session, shell and login manager
           critical: true
           packages:
             - pantheon-session
+            - catos-pantheon-applications-menu
+            - catos-pantheon-dock
+            - catos-wingpanel-indicator-power
+            - wingpanel-indicator-datetime
+            - wingpanel-indicator-network
+            - wingpanel-indicator-sound
+            - wingpanel-indicator-keyboard
+            - wingpanel-indicator-notifications
+            - catos-pantheon-settings
             - lightdm
-            - lightdm-pantheon-greeter
+            - lightdm-gtk-greeter
             - xorg-server
         - name: Pantheon applications
           description: Desktop settings and applications

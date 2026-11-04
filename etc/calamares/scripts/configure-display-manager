@@ -313,6 +313,47 @@ enable_traditional() {
     ln -s "/usr/lib/systemd/system/$service" "$systemd/display-manager.service"
 }
 
+# Pantheon uses a Wayland session; Calamares may have placed a GNOME
+# user-session in lightdm.conf. The main file takes priority over .conf.d.
+configure_lightdm_pantheon() {
+    file=$(root_path /etc/lightdm/lightdm.conf)
+    mkdir -p "$(dirname "$file")"
+    [ -f "$file" ] || : > "$file"
+    tmp=$file.tmp.$$
+    awk -v session="$autologin_session" -v user="$autologin_user" '
+        function emit() {
+            print "user-session=" session
+            print "autologin-session=" session
+            if (user == "none" || user == "") {
+                print "autologin-user="
+            } else {
+                print "autologin-user=" user
+            }
+            print "greeter-session=lightdm-gtk-greeter"
+        }
+        /^\[Seat:\*\][[:space:]]*$/ {
+            if (seat) emit()
+            print
+            seat = 1
+            found = 1
+            next
+        }
+        /^\[/ {
+            if (seat) emit()
+            seat = 0
+        }
+        seat && /^[[:space:]]*(#?[[:space:]]*)?(user-session|autologin-session|autologin-user|greeter-session)[[:space:]]*=/ { next }
+        { print }
+        END {
+            if (seat) emit()
+            if (!found) {
+                print "[Seat:*]"
+                emit()
+            }
+        }
+    ' "$file" > "$tmp" && mv "$tmp" "$file"
+}
+
 enable_ly() {
     wants=$(root_path /etc/systemd/system/multi-user.target.wants)
     mkdir -p "$wants"
@@ -364,5 +405,11 @@ case $selected in
     ly) enable_ly ;;
     *) enable_traditional "$selected" ;;
 esac
+
+# Limit this session/greeter repair to Pantheon. Other desktop choices
+# retain their existing display-manager configuration.
+if [ "$selected" = lightdm ] && [ "$autologin_session" = pantheon-wayland ]; then
+    configure_lightdm_pantheon
+fi
 
 printf 'configure-display-manager: selected %s\n' "$selected"
