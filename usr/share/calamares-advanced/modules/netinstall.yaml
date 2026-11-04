@@ -156,7 +156,7 @@
       description: GXDE desktop
       hidden: true
       selected: false
-      critical: true
+      critical: false
       packages:
         - gxde-core-git
         - gxdm-git
@@ -166,7 +166,7 @@
       description: Denial desktop
       hidden: true
       selected: false
-      critical: true
+      critical: false
       packages:
         - denial
         - sddm

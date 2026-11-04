@@ -1,26 +1,32 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 set -euo pipefail
+# A third-party desktop repository is optional. Failure must not abort
+# installation of the base system.
+trap 'exit 0' ERR
 
 target=$(realpath -- "$1")
 work=$(mktemp -d "$target/var/tmp/calamares-gxde.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT
 key="$work/repository.asc"
-curl --fail --silent --show-error --location 'https://repo.gxde.top/gxde-arch/gxde.asc' -o "$key"
+curl --fail --silent --show-error --location --connect-timeout 8 --max-time 20 'https://repo.gxde.top/gxde-arch/gxde.asc' -o "$key"
 fingerprint=$(gpg --homedir "$work" --batch --show-keys --with-colons "$key" |
     awk -F: '$1 == "fpr" { print $10; exit }')
 [[ "$fingerprint" == 'BCC6D7F07130C0FA32669066FD6EEA1F20CD4B27' ]]
-chroot "$target" pacman-key --init
-chroot "$target" pacman-key --add "/var/tmp/${work##*/}/repository.asc"
-chroot "$target" pacman-key --lsign-key "$fingerprint"
+timeout -k 5s 45s chroot "$target" pacman-key --init
+timeout -k 5s 20s chroot "$target" pacman-key --add "/var/tmp/${work##*/}/repository.asc"
+timeout -k 5s 20s chroot "$target" pacman-key --lsign-key "$fingerprint"
 
 if ! chroot "$target" pacman-conf --repo-list | grep -Fxq gxde; then
-    cat >> "$target/etc/pacman.conf" <<'EOF'
+    cp -p -- "$target/etc/pacman.conf" "$work/pacman.conf"
+    cat >> "$work/pacman.conf" <<'EOF'
 
 [gxde]
 SigLevel = Required
 Server = https://repo.gxde.top/gxde-arch/$arch
 EOF
+    timeout -k 5s 75s chroot "$target" pacman --config "/var/tmp/${work##*/}/pacman.conf" -Sy --noconfirm
+    mv -- "$work/pacman.conf" "$target/etc/pacman.conf"
+else
+    timeout -k 5s 75s chroot "$target" pacman -Sy --noconfirm
 fi
-
-chroot "$target" pacman -Sy --noconfirm
