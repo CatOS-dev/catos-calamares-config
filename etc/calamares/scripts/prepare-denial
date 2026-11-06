@@ -9,7 +9,7 @@ target=$(realpath -- "$1")
 work=$(mktemp -d "$target/var/tmp/calamares-denial.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT
 key="$work/repository.asc"
-curl --fail --silent --show-error --location --connect-timeout 8 --max-time 20 'https://denialwm.github.io/denial/denial-repo-key.asc' -o "$key"
+curl --fail --silent --show-error --location --connect-timeout 8 --max-time 20 'https://packages.denialwm.org/denial-repo-key.asc' -o "$key"
 fingerprint=$(gpg --homedir "$work" --batch --show-keys --with-colons "$key" |
     awk -F: '$1 == "fpr" { print $10; exit }')
 [[ "$fingerprint" == 'AE4108FA5E91E26BE0EE331E0F5B3AD16E023091' ]]
@@ -23,7 +23,7 @@ if ! chroot "$target" pacman-conf --repo-list | grep -Fxq denial; then
 
 [denial]
 SigLevel = Required TrustedOnly
-Server = https://denialwm.github.io/denial/$arch
+Server = https://packages.denialwm.org/arch/$arch
 EOF
     timeout -k 5s 75s chroot "$target" pacman --config "/var/tmp/${work##*/}/pacman.conf" -Sy --noconfirm
     mv -- "$work/pacman.conf" "$target/etc/pacman.conf"

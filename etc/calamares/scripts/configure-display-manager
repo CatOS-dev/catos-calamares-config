@@ -313,6 +313,49 @@ enable_traditional() {
     ln -s "/usr/lib/systemd/system/$service" "$systemd/display-manager.service"
 }
 
+configure_gxdm_autologin() {
+    file=$(root_path /etc/gxdm.conf)
+    mkdir -p "$(dirname "$file")"
+    [ -f "$file" ] || : > "$file"
+    user=
+    session=
+    if [ "$autologin_user" != none ]; then
+        [ "$autologin_session" != none ] || {
+            warn "GXDM automatic login requires a desktop session"
+            return 1
+        }
+        user=$autologin_user
+        session=$autologin_session.desktop
+    fi
+    tmp=$file.tmp.$$
+    awk -v user="$user" -v session="$session" '
+        function emit() {
+            print "User=" user
+            print "Session=" session
+        }
+        /^\[Autologin\][[:space:]]*$/ {
+            if (autologin) emit()
+            print
+            autologin = 1
+            found = 1
+            next
+        }
+        /^\[/ {
+            if (autologin) emit()
+            autologin = 0
+        }
+        autologin && /^[[:space:]]*(User|Session)[[:space:]]*=/ { next }
+        { print }
+        END {
+            if (autologin) emit()
+            if (!found) {
+                print "[Autologin]"
+                emit()
+            }
+        }
+    ' "$file" > "$tmp" && mv "$tmp" "$file"
+}
+
 # Pantheon uses a Wayland session; Calamares may have placed a GNOME
 # user-session in lightdm.conf. The main file takes priority over .conf.d.
 configure_lightdm_pantheon() {
@@ -376,6 +419,9 @@ selected=
 for candidate in "$@"; do
     candidate_available "$candidate" || continue
     case $candidate in
+        gxdm)
+            configure_gxdm_autologin || exit 1
+            ;;
         noctalia-greeter)
             if ! configure_noctalia; then
                 warn "Noctalia Greeter configuration failed; trying the next candidate"

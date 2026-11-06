@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import configparser
 from pathlib import Path
 import subprocess
 import tempfile
@@ -84,6 +85,59 @@ class DisplayManagerBehaviorTests(unittest.TestCase):
                 self.link_target(root, "/etc/systemd/system/display-manager.service"),
                 "/usr/lib/systemd/system/gdm.service",
             )
+
+    def test_gxde_selection_applies_stored_autologin_and_can_disable_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self.make_file(root, "/usr/bin/gxdm", executable=True)
+            self.make_file(root, "/usr/lib/systemd/system/gxdm.service")
+            config = self.make_file(root, "/etc/gxdm.conf")
+            config.write_text(
+                "[General]\nDisplayServer=wayland\n"
+                "[Autologin]\nUser=liveuser\nSession=live.desktop\nRelogin=false\n"
+                "[Users]\nRememberLastUser=true\n",
+                encoding="utf-8",
+            )
+            stored = self.run_script(root, "--autologin-user", "alice")
+            self.assertEqual(stored.returncode, 0, stored.stderr)
+            env = dict(os.environ, CATOS_DM_ROOT=str(root))
+            selected = subprocess.run(
+                [str(SCRIPT.with_name("configure-selected-desktop")), "GXDE", "alice"],
+                env=env, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(selected.returncode, 0, selected.stderr)
+            enabled = configparser.ConfigParser()
+            enabled.read(config)
+            self.assertEqual(enabled["Autologin"]["User"], "alice")
+            self.assertEqual(enabled["Autologin"]["Session"], "gxde-flakewm.desktop")
+            self.assertEqual(enabled["Autologin"]["Relogin"], "false")
+            self.assertEqual(enabled["General"]["DisplayServer"], "wayland")
+            self.assertEqual(enabled["Users"]["RememberLastUser"], "true")
+            self.assertEqual(
+                self.link_target(root, "/etc/systemd/system/display-manager.service"),
+                "/usr/lib/systemd/system/gxdm.service",
+            )
+            disabled = self.run_script(root, "--autologin-user", "none", "gxdm")
+            self.assertEqual(disabled.returncode, 0, disabled.stderr)
+            cleared = configparser.ConfigParser()
+            cleared.read(config)
+            self.assertEqual(cleared["Autologin"]["User"], "")
+            self.assertEqual(cleared["Autologin"]["Session"], "")
+
+    def test_gxdm_autologin_creates_configuration_on_fresh_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self.make_file(root, "/usr/bin/gxdm", executable=True)
+            self.make_file(root, "/usr/lib/systemd/system/gxdm.service")
+            result = self.run_script(
+                root, "--autologin-user", "alice",
+                "--autologin-session", "gxde-flakewm", "gxdm",
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            config = configparser.ConfigParser()
+            config.read(root / "etc/gxdm.conf")
+            self.assertEqual(config["Autologin"]["User"], "alice")
+            self.assertEqual(config["Autologin"]["Session"], "gxde-flakewm.desktop")
 
 
     def test_incomplete_noctalia_falls_back(self) -> None:
