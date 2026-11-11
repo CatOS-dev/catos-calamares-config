@@ -346,19 +346,19 @@
             - catos-gtk-settings
             - catos-graphite-gtk-theme
     - name: Niri-dms
-      description: Niri scrolling Wayland compositor with Dank Material Shell
+      description: Niri scrolling Wayland compositor with Dux Shell
       hidden: false
       selected: false
       expanded: false
       subgroups:
         - name: Niri core
-          description: Session, login manager, XWayland bridge and DMS integration
+          description: Session, login manager, XWayland bridge and Dux integration
           critical: true
           packages:
             - niri
             - ly
             - xwayland-satellite
-            - catos-niri-dms
+            - catos-niri-dux
         - name: Desktop services
           description: Network, Bluetooth, audio and session utilities
           critical: false
