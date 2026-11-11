@@ -458,13 +458,13 @@
             - qt5ct
             - qt6ct
     - name: Hyprland-dms
-      description: Hyprland dynamic tiling Wayland compositor with Dank Material Shell
+      description: Hyprland dynamic tiling Wayland compositor with Dux Shell
       hidden: false
       selected: false
       expanded: false
       subgroups:
         - name: Hyprland core
-          description: Session, login manager, XWayland and DMS integration
+          description: Session, login manager, XWayland and Dux integration
           critical: true
           packages:
             - hyprland
@@ -472,7 +472,7 @@
             - xorg-xwayland
             - hyprlock
             - hyprpicker
-            - catos-hyprland-dms
+            - catos-hyprland-dux
         - name: Desktop services
           description: Network, Bluetooth, audio and session utilities
           critical: false
