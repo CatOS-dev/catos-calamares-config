@@ -59,7 +59,7 @@ case $desktop in
         ;;
     Niri-noctalia)
         session=niri
-        profile=catos-niri-noctaliav5
+        profile=catos-niri-noctalia
         set -- noctalia-greeter ly gdm sddm lightdm plasmalogin
         ;;
     Hyprland-dms)
@@ -69,7 +69,7 @@ case $desktop in
         ;;
     Hyprland-noctalia)
         session=hyprland
-        profile=catos-hyprland-noctaliav5
+        profile=catos-hyprland-noctalia
         set -- noctalia-greeter ly gdm sddm lightdm plasmalogin
         ;;
     Deepin-Desktop)

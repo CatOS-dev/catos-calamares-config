@@ -410,7 +410,7 @@
             - niri
             - noctalia
             - xwayland-satellite
-            - catos-niri-noctaliav5
+            - catos-niri-noctalia
         - name: Recommended display manager
           description: Noctalia Greeter and its greetd service
           critical: false
@@ -525,7 +525,7 @@
             - hyprland
             - noctalia
             - xorg-xwayland
-            - catos-hyprland-noctaliav5
+            - catos-hyprland-noctalia
         - name: Recommended display manager
           description: Noctalia Greeter and its greetd service
           critical: false
