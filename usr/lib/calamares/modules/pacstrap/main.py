@@ -62,6 +62,13 @@ _n = _translation.ngettext
 custom_status_message = None
 status_update_time = 0
 recent_output = []
+PACSTRAP_CACHYOS = "/usr/local/bin/pacstrap-cachyos"
+
+
+def _host_package_command(command, selection="catos"):
+    if selection == CACHYOS_SELECTION:
+        return [PACSTRAP_CACHYOS, "--", *command]
+    return command
 
 
 class PacmanError(Exception):
@@ -239,10 +246,12 @@ def _host_capture_lines(command):
     return [l for l in lines if l]
 
 
-def _download_plan(pacman_config, root_mount_point, packages):
+def _download_plan(pacman_config, root_mount_point, packages, selection="catos"):
     cache_directory = Path(root_mount_point) / "var/cache/pacman/pkg"
     cache_directory.mkdir(parents=True, exist_ok=True)
-    configured_dbpath = _host_capture_lines(["pacman-conf", "-c", pacman_config, "DBPath"])
+    configured_dbpath = _host_capture_lines(
+        _host_package_command(["pacman-conf", "-c", pacman_config, "DBPath"], selection)
+    )
     host_dbpath = Path(configured_dbpath[-1] if configured_dbpath else "/var/lib/pacman")
     host_sync = host_dbpath / "sync"
     if not host_sync.is_dir():
@@ -268,7 +277,7 @@ def _download_plan(pacman_config, root_mount_point, packages):
             "--noconfirm",
             *packages,
         ]
-        plan = parse_download_plan(_host_capture_lines(command))
+        plan = parse_download_plan(_host_capture_lines(_host_package_command(command, selection)))
     return plan, cache_directory
 
 
@@ -304,14 +313,18 @@ def _transfer_reporter(progress_start, progress_end, phase_state):
     return report
 
 
-def _repository_refresh_sampler(pacman_config):
-    repositories = _host_capture_lines(["pacman-conf", "-c", pacman_config, "--repo-list"])
-    configured_dbpath = _host_capture_lines(["pacman-conf", "-c", pacman_config, "DBPath"])
+def _repository_refresh_sampler(pacman_config, selection="catos"):
+    repositories = _host_capture_lines(
+        _host_package_command(["pacman-conf", "-c", pacman_config, "--repo-list"], selection)
+    )
+    configured_dbpath = _host_capture_lines(
+        _host_package_command(["pacman-conf", "-c", pacman_config, "DBPath"], selection)
+    )
     dbpath = Path(configured_dbpath[-1] if configured_dbpath else "/var/lib/pacman")
     return RepositoryDatabaseSampler(dbpath / "sync", repositories)
 
 
-def _maybe_sync_db_host(pacman_config):
+def _maybe_sync_db_host(pacman_config, selection="catos"):
     """
     Optional pacman -Sy before pkgcheck so the local sync DB isn't stale.
     Controlled by job config: sync_db (default True).
@@ -327,7 +340,7 @@ def _maybe_sync_db_host(pacman_config):
     libcalamares.utils.debug("Syncing pacman database before pkgcheck (pacman -Sy)...")
     heartbeat = None
     try:
-        sampler = _repository_refresh_sampler(pacman_config)
+        sampler = _repository_refresh_sampler(pacman_config, selection)
 
         def heartbeat():
             global custom_status_message
@@ -344,22 +357,22 @@ def _maybe_sync_db_host(pacman_config):
 
     # Using run_in_host so output goes through line_cb for UI/log.
     run_in_host(
-        ["pacman", "--config", pacman_config, "-Sy", "--noconfirm"],
+        _host_package_command(["pacman", "--config", pacman_config, "-Sy", "--noconfirm"], selection),
         line_cb,
         heartbeat,
     )
     libcalamares.job.setprogress(0.04)
 
 
-def _build_repo_index_host(pacman_config):
+def _build_repo_index_host(pacman_config, selection="catos"):
     """
     Build (packages_set, groups_set) on host (live environment).
     """
     pkgs = set(
-        _host_capture_lines(["pacman", "--config", pacman_config, "-Slq"])
+        _host_capture_lines(_host_package_command(["pacman", "--config", pacman_config, "-Slq"], selection))
     )
     groups = set(
-        _host_capture_lines(["pacman", "--config", pacman_config, "-Sgq"])
+        _host_capture_lines(_host_package_command(["pacman", "--config", pacman_config, "-Sgq"], selection))
     )
     libcalamares.utils.debug(f"[host] pacman repo index: {len(pkgs)} packages, {len(groups)} groups")
     return pkgs, groups
@@ -438,6 +451,11 @@ def run():
             _("Repository configuration missing"),
             _("Required pacman configuration does not exist: {path}").format(path=pacman_config),
         )
+    if repository_selection == CACHYOS_SELECTION and not os.path.isfile(PACSTRAP_CACHYOS):
+        return _failure(
+            _("CachyOS pacstrap missing"),
+            _("Required CachyOS pacstrap executable does not exist: {path}").format(path=PACSTRAP_CACHYOS),
+        )
 
     bootloader = (
         libcalamares.globalstorage.value("bootloader.selected")
@@ -473,6 +491,8 @@ def run():
         )
 
     base_packages = transform_packages(base_packages, repository_selection)
+    if repository_selection == CACHYOS_SELECTION:
+        base_packages.extend(["cachyos-keyring", "pacman"])
     base_packages = list(dict.fromkeys(base_packages))
     libcalamares.utils.debug(
         f"Boot package plan: provider={bootloader}, snapshots={snapshots_enabled}, "
@@ -484,7 +504,7 @@ def run():
     # package plan. Continuing with stale metadata after a failed refresh can
     # select packages that the current mirrors no longer provide.
     try:
-        _maybe_sync_db_host(pacman_config)
+        _maybe_sync_db_host(pacman_config, repository_selection)
     except PacmanError as e:
         libcalamares.utils.warning(f"pacman database refresh failed: {e}")
         return _failure(
@@ -494,8 +514,11 @@ def run():
         )
 
     try:
-        repo_pkgs, repo_groups = _build_repo_index_host(pacman_config)
-        required_install_packages = list(dict.fromkeys(required_packages + boot_packages))
+        repo_pkgs, repo_groups = _build_repo_index_host(pacman_config, repository_selection)
+        required_install_packages = list(dict.fromkeys(
+            required_packages + boot_packages +
+            (["cachyos-keyring", "pacman"] if repository_selection == CACHYOS_SELECTION else [])
+        ))
         missing_install_packages = missing_required_packages(
             required_install_packages, repo_pkgs, repo_groups
         )
@@ -536,7 +559,7 @@ def run():
     # Keep pacstrap's default keyring-copy behavior. The preceding jobs have
     # already fetched and locally trusted all selected repository signing keys.
     pacstrap_command = [
-        "pacstrap",
+        PACSTRAP_CACHYOS if repository_selection == CACHYOS_SELECTION else "pacstrap",
         "-C",
         pacman_config,
         root_mount_point,
@@ -551,7 +574,9 @@ def run():
     }
     transaction_tracker = PacmanTransactionTracker()
     try:
-        plan, cache_directory = _download_plan(pacman_config, root_mount_point, base_packages)
+        plan, cache_directory = _download_plan(
+            pacman_config, root_mount_point, base_packages, repository_selection
+        )
         if plan.total_bytes > 0:
             sampler = TransferSampler(plan, [cache_directory])
             initial_snapshot = sampler.sample()

@@ -43,7 +43,7 @@ def require_supported_architecture(architecture: str) -> None:
 
 def repository_names(
     architecture: str,
-    include_base_repository: bool = False,
+    include_base_repository: bool = True,
 ) -> list[str]:
     optimized = {
         "v3": ["cachyos-v3", "cachyos-core-v3", "cachyos-extra-v3"],
@@ -96,7 +96,7 @@ def pacman_architectures(architecture: str) -> str:
 def render_repository_block(
     architecture: str,
     mirrorlist_dir: str | Path = Path("/etc/pacman.d"),
-    include_base_repository: bool = False,
+    include_base_repository: bool = True,
 ) -> str:
     mirrorlist_root = Path(mirrorlist_dir)
     optimized_mirrorlist = mirrorlist_name(architecture)
@@ -116,7 +116,7 @@ def render_pacman_config(
     base_config: str,
     architecture: str,
     mirrorlist_dir: str | Path = Path("/etc/pacman.d"),
-    include_base_repository: bool = False,
+    include_base_repository: bool = True,
 ) -> str:
     managed_pattern = re.compile(
         rf"(?ms)^\s*{re.escape(MANAGED_BEGIN)}.*?{re.escape(MANAGED_END)}\s*\n?"
@@ -228,14 +228,7 @@ def main() -> int:
     except RuntimeError as error:
         print(error)
         return 1
-    print(
-        "CachyOS pacstrap repositories: "
-        + ", ".join(repository_names(architecture))
-    )
-    print(
-        "CachyOS target repositories: "
-        + ", ".join(repository_names(architecture, include_base_repository=True))
-    )
+    print("CachyOS repositories: " + ", ".join(repository_names(architecture)))
     write_repository_configuration(architecture)
     return 0
 
